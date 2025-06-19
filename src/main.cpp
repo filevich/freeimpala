@@ -6,7 +6,7 @@
 
 int main(int argc, char** argv) {
     // Parse command line arguments
-    argparse::ArgumentParser program("parallel-game-system");
+    argparse::ArgumentParser program("freeimpala");
     program.add_description("Parallel consumer-producer system for game simulation");
     
     // General parameters
