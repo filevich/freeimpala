@@ -212,7 +212,7 @@ int main(int argc, char** argv) {
     }
     
     ss << "Execution completed successfully!" << std::endl;
-    std::cout << ss.str();
+    std::cerr << ss.str();
     ss.str("");
     ss.clear();
     return 0;
