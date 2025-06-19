@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
         
     program.add_argument("-l", "--checkpoint-location")
         .help("Location to store and load checkpoint files")
-        .default_value(std::string("./tmp/freeimpala_checkpoints"));
+        .default_value(std::string("/tmp/freeimpala_checkpoints"));
         
     program.add_argument("-m", "--starting-model")
         .help("Starting model location")
@@ -211,8 +211,8 @@ int main(int argc, char** argv) {
         ss.clear();
     }
     
-    ss << "Execution completed successfully!!!" << std::endl;
-    std::cerr << ss.str();
+    ss << "Execution completed successfully!" << std::endl;
+    std::cout << ss.str();
     ss.str("");
     ss.clear();
     return 0;
