@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
         
     program.add_argument("-l", "--checkpoint-location")
         .help("Location to store and load checkpoint files")
-        .default_value(std::string("./checkpoints"));
+        .default_value(std::string("./tmp/freeimpala_checkpoints"));
         
     program.add_argument("-m", "--starting-model")
         .help("Starting model location")
