@@ -1,9 +1,9 @@
 #ifndef AGENT_H
 #define AGENT_H
 
-#include "data_structures.h"
 #include <future>
-#include "metrics_tracker.h"
+#include "freeimpala/data_structures.h"
+#include "freeimpala/metrics_tracker.h"
 
 class Agent {
 private:

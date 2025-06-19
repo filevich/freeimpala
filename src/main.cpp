@@ -1,8 +1,8 @@
 #include <cmath>
 #include <iostream>
 #include <argparse/argparse.hpp>
-#include "learner.h"
-#include "agent.h"
+#include "freeimpala/learner.h"
+#include "freeimpala/agent.h"
 
 int main(int argc, char** argv) {
     // Parse command line arguments

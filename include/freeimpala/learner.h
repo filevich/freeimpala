@@ -1,8 +1,8 @@
 #ifndef LEARNER_H
 #define LEARNER_H
 
-#include "data_structures.h"
-#include "metrics_tracker.h"
+#include "freeimpala/data_structures.h"
+#include "freeimpala/metrics_tracker.h"
 
 class Learner {
 private:
