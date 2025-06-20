@@ -108,9 +108,9 @@ argparse::ArgumentParser setupArgumentParser() {
 bool parseParameters(
     int argc,
     char** argv,
-    ProgramParams& params,
-    std::stringstream& ss
+    ProgramParams& params
 ) {
+    std::stringstream ss;
     auto program = setupArgumentParser();
     
     try {
@@ -139,7 +139,9 @@ bool parseParameters(
 }
 
 // Validate parameters
-bool validateParameters(const ProgramParams& params, std::stringstream& ss) {
+bool validateParameters(const ProgramParams& params) {
+    std::stringstream ss;
+
     if (params.batch_size > params.buffer_capacity) {
         ss << "Error: Batch size must be less than buffer capacity" << std::endl;
         std::cerr << ss.str();
@@ -156,7 +158,8 @@ bool validateParameters(const ProgramParams& params, std::stringstream& ss) {
 }
 
 // Setup and start the learner
-std::unique_ptr<Learner> setupLearner(const ProgramParams& params, std::stringstream& ss) {
+std::unique_ptr<Learner> setupLearner(const ProgramParams& params) {
+    std::stringstream ss;
     ss << "Creating learner..." << std::endl;
     std::cerr << ss.str();
     ss.str("");
@@ -193,9 +196,9 @@ std::unique_ptr<Learner> setupLearner(const ProgramParams& params, std::stringst
 std::vector<std::thread> setupAgents(
     const ProgramParams& params, 
     std::vector<std::shared_ptr<Agent>>& agents,
-    Learner& learner,
-    std::stringstream& ss
+    Learner& learner
 ) {
+    std::stringstream ss;
     ss << "Creating and starting " << params.num_agents << " agents..." << std::endl;
     std::cerr << ss.str();
     ss.str("");
@@ -228,9 +231,9 @@ std::vector<std::thread> setupAgents(
 void cleanup(
     const ProgramParams& params,
     Learner& learner, 
-    std::vector<std::thread>& agent_threads, 
-    std::stringstream& ss
+    std::vector<std::thread>& agent_threads
 ) {
+    std::stringstream ss;
     ss << "Waiting for agents to complete..." << std::endl;
     std::cerr << ss.str();
     ss.str("");
@@ -260,12 +263,11 @@ void cleanup(
         ss.clear();
     }
 
-    ss << "Execution completed successfully!" << std::endl;
+    ss << "Execution completed successfully" << std::endl;
     std::cerr << ss.str();
 }
 
 int main(int argc, char** argv) {
-    std::stringstream ss;
     ProgramParams params;
 
     // Initialize metrics and random seed
@@ -274,24 +276,24 @@ int main(int argc, char** argv) {
     std::srand(std::time(nullptr));
 
     // Parse and validate parameters
-    if (!parseParameters(argc, argv, params, ss)) {
+    if (!parseParameters(argc, argv, params)) {
         return 1;
     }
     
-    if (!validateParameters(params, ss)) {
+    if (!validateParameters(params)) {
         return 1;
     }
 
-    auto learner = setupLearner(params, ss);
+    auto learner = setupLearner(params);
 
     // Setup agents
     std::vector<std::shared_ptr<Agent>> agents;
     // Dereference the pointer with '*' to pass the Learner object by reference.
-    std::vector<std::thread> agent_threads = setupAgents(params, agents, *learner, ss);
+    std::vector<std::thread> agent_threads = setupAgents(params, agents, *learner);
 
     // Cleanup
     // Dereference the pointer here as well.
-    cleanup(params, *learner, agent_threads, ss);
+    cleanup(params, *learner, agent_threads);
 
     return 0; 
     // As main ends, 'learner' goes out of scope, and the unique_ptr's 
