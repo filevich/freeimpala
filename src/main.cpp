@@ -288,11 +288,9 @@ int main(int argc, char** argv) {
 
     // Setup agents
     std::vector<std::shared_ptr<Agent>> agents;
-    // Dereference the pointer with '*' to pass the Learner object by reference.
     std::vector<std::thread> agent_threads = setupAgents(params, agents, *learner);
 
     // Cleanup
-    // Dereference the pointer here as well.
     cleanup(params, *learner, agent_threads);
 
     return 0; 
