@@ -155,6 +155,40 @@ bool validateParameters(const ProgramParams& params, std::stringstream& ss) {
     return true;
 }
 
+// Setup and start the learner
+std::unique_ptr<Learner> setupLearner(const ProgramParams& params, std::stringstream& ss) {
+    ss << "Creating learner..." << std::endl;
+    std::cerr << ss.str();
+    ss.str("");
+    ss.clear();
+
+    // Correctly calculate learner iterations using floating-point division
+    size_t learner_iterations = ceil((params.num_agents * params.total_iterations) / params.batch_size);
+
+    // Create the Learner on the heap and wrap it in a std::unique_ptr.
+    auto learner = std::make_unique<Learner>(
+        params.num_players,
+        params.buffer_capacity,
+        params.entry_size,
+        params.batch_size,
+        params.learner_time,
+        params.checkpoint_freq,
+        params.checkpoint_location,
+        params.starting_model,
+        learner_iterations
+    );
+
+    ss << "Starting learner..." << std::endl;
+    std::cerr << ss.str();
+    ss.str("");
+    ss.clear();
+    
+    // Start learner
+    learner->start();
+
+    return learner;
+}
+
 // Setup and start agents
 std::vector<std::thread> setupAgents(
     const ProgramParams& params, 
@@ -248,37 +282,18 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Setup learner
-    ss << "Creating learner..." << std::endl;
-    std::cerr << ss.str();
-    ss.str("");
-    ss.clear();
-
-    size_t learner_iterations = ceil((params.num_agents * params.total_iterations) / params.batch_size);
-    Learner learner(
-        params.num_players,
-        params.buffer_capacity,
-        params.entry_size,
-        params.batch_size,
-        params.learner_time,
-        params.checkpoint_freq,
-        params.checkpoint_location,
-        params.starting_model,
-        learner_iterations
-    );
-
-    ss << "Starting learner..." << std::endl;
-    std::cerr << ss.str();
-    ss.str("");
-    ss.clear();
-    learner.start();
+    auto learner = setupLearner(params, ss);
 
     // Setup agents
     std::vector<std::shared_ptr<Agent>> agents;
-    std::vector<std::thread> agent_threads = setupAgents(params, agents, learner, ss);
+    // Dereference the pointer with '*' to pass the Learner object by reference.
+    std::vector<std::thread> agent_threads = setupAgents(params, agents, *learner, ss);
 
     // Cleanup
-    cleanup(params, learner, agent_threads, ss);
+    // Dereference the pointer here as well.
+    cleanup(params, *learner, agent_threads, ss);
 
-    return 0;
+    return 0; 
+    // As main ends, 'learner' goes out of scope, and the unique_ptr's 
+    // destructor is called, which safely deletes the Learner object.
 }
