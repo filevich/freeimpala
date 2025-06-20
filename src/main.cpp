@@ -1,9 +1,3 @@
-#include <cmath>
-#include <iostream>
-#include <argparse/argparse.hpp>
-#include "freeimpala/learner.h"
-#include "freeimpala/agent.h"
-
 #include <argparse/argparse.hpp>
 #include <chrono>
 #include <iostream>
@@ -13,6 +7,8 @@
 #include <vector>
 #include <ctime>
 #include <cmath>
+#include "freeimpala/learner.h"
+#include "freeimpala/agent.h"
 
 // Structure to hold all command-line parameters
 struct ProgramParams {
@@ -29,6 +25,7 @@ struct ProgramParams {
     size_t game_steps;
     size_t agent_time;
     std::string metrics_file;
+    unsigned int seed;
 };
 
 // Setup argument parser with all parameters
@@ -101,6 +98,11 @@ argparse::ArgumentParser setupArgumentParser() {
         .help("File to save performance metrics (CSV)")
         .default_value(std::string(""));
 
+    program.add_argument("--seed")
+        .help("Seed for random number generation")
+        .default_value(static_cast<unsigned int>(std::time(nullptr)))
+        .scan<'u', unsigned int>();
+
     return program;
 }
 
@@ -134,6 +136,7 @@ bool parseParameters(
     params.game_steps = program.get<int>("--game-steps");
     params.agent_time = program.get<int>("--agent-time");
     params.metrics_file = program.get<std::string>("--metrics-file");
+    params.seed = program.get<unsigned int>("--seed");
 
     return true;
 }
@@ -270,11 +273,6 @@ void cleanup(
 int main(int argc, char** argv) {
     ProgramParams params;
 
-    // Initialize metrics and random seed
-    auto metrics = MetricsTracker::getInstance();
-    metrics->start();
-    std::srand(std::time(nullptr));
-
     // Parse and validate parameters
     if (!parseParameters(argc, argv, params)) {
         return 1;
@@ -283,6 +281,11 @@ int main(int argc, char** argv) {
     if (!validateParameters(params)) {
         return 1;
     }
+
+    std::srand(params.seed);
+
+    auto metrics = MetricsTracker::getInstance();
+    metrics->start();
 
     auto learner = setupLearner(params);
 
@@ -294,6 +297,4 @@ int main(int argc, char** argv) {
     cleanup(params, *learner, agent_threads);
 
     return 0; 
-    // As main ends, 'learner' goes out of scope, and the unique_ptr's 
-    // destructor is called, which safely deletes the Learner object.
 }
