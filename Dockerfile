@@ -12,6 +12,7 @@ RUN apt-get update && \
 
 WORKDIR /app
 COPY . /app
+RUN rm -rf /app/build
 
 RUN mkdir build && cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++ -pthread" && \
