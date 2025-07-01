@@ -39,9 +39,9 @@ RUN mkdir -p build && \
     cmake -DCMAKE_CXX_COMPILER=mpicxx -DCMAKE_C_COMPILER=mpicc -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON .. && \
     cmake --build . 
 
-RUN mkdir -p /opt/freeimpala/bin && \
-    mv /app/build/freeimpala /opt/freeimpala/bin/ && \
-    mv /app/build/freeimpala_mpi /opt/freeimpala/bin/ && \
+RUN mkdir -p /usr/local/bin/ && \
+    mv /app/build/freeimpala /usr/local/bin/ && \
+    mv /app/build/freeimpala_mpi /usr/local/bin/ && \
     rm -rf /app
 
 # Verify OpenMPI version
