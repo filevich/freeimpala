@@ -62,7 +62,8 @@
         "span": "cpp",
         "sstream": "cpp",
         "stack": "cpp",
-        "variant": "cpp"
+        "variant": "cpp",
+        "chrono": "cpp"
     },
     "cmake.sourceDirectory": "/Users/jp/Workspace/facu/2025/hpc/experiments/dmc",
     "C_Cpp.default.compilerPath": "/usr/bin/g++"
