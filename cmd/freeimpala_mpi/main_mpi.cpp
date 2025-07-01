@@ -363,7 +363,7 @@ int main(int argc, char** argv)
                     params.agent_time, params.total_iterations,
                     dummy, dummy_model_mgr);
 
-        agent.run();   // same loop as before – see next section for transfer
+        agent.run();   // same loop as before
 
         // Tell learner we are done
         MPI_Send(nullptr, 0, MPI_CHAR, 0, TAG_TERMINATE, MPI_COMM_WORLD);
