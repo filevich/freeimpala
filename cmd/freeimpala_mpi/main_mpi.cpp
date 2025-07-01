@@ -232,6 +232,9 @@ int main(int argc, char** argv) {
 
     if (world_rank == 0) {
         // Learner process
+        // Notice: The Learner will need to train `x` batches per player.
+        // Where `x` can be derived from the parameters as:
+        // `x = (agents * iterations) / batch_size`
         LearnerMPI learner(
             params.num_players,
             params.buffer_capacity,
