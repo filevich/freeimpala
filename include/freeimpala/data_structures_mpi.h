@@ -1,103 +1,48 @@
-#ifndef DATA_MPI_H
-#define DATA_MPI_H
+#ifndef DATA_STRUCTURES_MPI_H
+#define DATA_STRUCTURES_MPI_H
 
 #include <iostream>
 #include <vector>
+#include <mutex>
 #include <atomic>
-#include <chrono>
 #include <fstream>
+#include <filesystem>
 #include <cstring>
 #include <cstdlib>
 #include <ctime>
 #include <memory>
 #include <string>
-#include <filesystem>
-#include <mpi.h>
+#include <queue>
+#include <functional>
+#include <sstream>
+
+// MPI tags
+#define DATA_TAG 1
+#define VERSION_REQUEST_TAG 2
+#define MODEL_REQUEST_TAG 3
+#define TERMINATE_TAG 4
 
 // Size of each element in bytes
 constexpr size_t ELEMENT_SIZE = 1024;
 
-// MPI message tags
-enum MPITags {
-    TAG_DATA_TRANSFER = 1000,      // Base tag for data transfers (add player_id)
-    TAG_MODEL_VERSION = 2000,      // Base tag for model version queries (add player_id)
-    TAG_MODEL_UPDATE = 3000,       // Signal that a model update is coming
-    TAG_SHUTDOWN = 9999            // Shutdown signal
-};
-
-// Simple model class that represents our "neural network"
 class Model {
 private:
     std::vector<char> data;
     std::atomic<uint64_t> version;
     std::string filepath;
+    mutable std::mutex model_mutex;
 
 public:
-    // Create a new model with random data
     Model(size_t size_bytes, const std::string& path) : 
         data(size_bytes, 0), 
         version(0),
         filepath(path) {
-        
-        // Initialize with random data
         generateRandomData();
-    }
-
-    // Load model from disk if it exists
-    bool loadFromDisk() {
-        if (!std::filesystem::exists(filepath)) {
-            return false;
-        }
-
-        std::ifstream file(filepath, std::ios::binary);
-        if (!file) {
-            return false;
-        }
-
-        // First read version
-        uint64_t stored_version;
-        file.read(reinterpret_cast<char*>(&stored_version), sizeof(stored_version));
-        
-        // Then read data
-        file.read(data.data(), data.size());
-        
-        if (file) {
-            version.store(stored_version);
-            return true;
-        }
-        return false;
-    }
-
-    // Save model to disk
-    bool saveToDisk() {
-        if (filepath.empty()) {
-            std::cerr << "Error: Cannot save model with empty filepath" << std::endl;
-            return false;
-        }
-        
-        std::filesystem::path directory = std::filesystem::path(filepath).parent_path();
-        if (!std::filesystem::exists(directory)) {
-            std::filesystem::create_directories(directory);
-        }
-
-        std::ofstream file(filepath, std::ios::binary);
-        if (!file) {
-            std::cerr << "Error: Could not open file for writing: " << filepath << std::endl;
-            return false;
-        }
-
-        // First write version
-        uint64_t current_version = version.load();
-        file.write(reinterpret_cast<char*>(&current_version), sizeof(current_version));
-        
-        // Then write data
-        file.write(data.data(), data.size());
-        
-        return static_cast<bool>(file);
     }
 
     // Generate random data for the model
     void generateRandomData() {
+        std::lock_guard<std::mutex> lock(model_mutex);
         for (size_t i = 0; i < data.size(); i++) {
             data[i] = static_cast<char>(rand() % 256);
         }
@@ -109,27 +54,28 @@ public:
         return version.load();
     }
 
-    // Get a reference to the model data
-    std::vector<char>& getData() {
+    // Get a copy of the model data
+    std::vector<char> getData() const {
+        std::lock_guard<std::mutex> lock(model_mutex);
         return data;
     }
-
-    // Get a const reference to the model data
-    const std::vector<char>& getData() const {
-        return data;
-    }
-
-    // Update model with new data and increment version
-    void update(const std::vector<char>& new_data, uint64_t new_version) {
+    
+    // Set model data directly (for MPI updates)
+    void setData(const std::vector<char>& new_data, uint64_t new_version) {
+        std::lock_guard<std::mutex> lock(model_mutex);
         if (new_data.size() == data.size()) {
             data = new_data;
             version.store(new_version);
         }
     }
 
-    // Get model size
-    size_t getSize() const {
-        return data.size();
+    // Create a deep copy of this model
+    std::shared_ptr<Model> createCopy() const {
+        std::lock_guard<std::mutex> lock(model_mutex);
+        std::shared_ptr<Model> copy = std::make_shared<Model>(data.size(), filepath);
+        copy->data = data;
+        copy->version.store(version.load());
+        return copy;
     }
 };
 
@@ -144,92 +90,117 @@ struct BufferEntry {
 // Local buffer with a single entry (used by Agents)
 class Buffer {
 private:
-    std::vector<BufferEntry> entries;
+    BufferEntry entry;
 
 public:
-    Buffer(size_t entry_size, size_t num_entries = 1) {
-        for (size_t i = 0; i < num_entries; i++) {
-            entries.emplace_back(entry_size * ELEMENT_SIZE);
-        }
-    }
+    Buffer(size_t size) : entry(size) {}
 
-    BufferEntry& getEntry(size_t index = 0) {
-        return entries[index];
+    BufferEntry& getEntry() {
+        return entry;
     }
 
     void reset() {
-        for (auto& entry : entries) {
-            entry.filled = false;
-        }
+        entry.filled = false;
+        std::fill(entry.data.begin(), entry.data.end(), 0);
     }
 };
 
-// MPI-based buffer for receiving data at the learner
-class MPIReceiveBuffer {
+// Model manager for handling model updates and synchronization
+class ModelManager {
 private:
-    std::vector<std::vector<char>> buffer;
-    size_t entry_size;
-    size_t capacity;
-    size_t write_pos;
-    size_t read_pos;
-    size_t count;
+    std::vector<std::shared_ptr<Model>> models;
+    std::vector<std::atomic<uint64_t>> latest_versions;
+    std::string model_directory;
 
 public:
-    MPIReceiveBuffer(size_t entry_sz, size_t cap) 
-        : entry_size(entry_sz * ELEMENT_SIZE),
-          capacity(cap),
-          write_pos(0),
-          read_pos(0),
-          count(0) {
-        buffer.resize(capacity);
-        for (auto& entry : buffer) {
-            entry.resize(entry_size);
+    ModelManager(size_t num_players, size_t model_size, const std::string& directory) 
+        : models(num_players),
+          latest_versions(num_players) {
+        
+        // Create models for each player
+        for (size_t p = 0; p < num_players; p++) {
+            std::string filepath = directory + "/model_" + std::to_string(p) + "_latest.bin";
+            models[p] = std::make_shared<Model>(model_size, filepath);
+            latest_versions[p].store(models[p]->getVersion());
         }
     }
 
-    // Try to receive data via MPI (non-blocking check)
-    bool tryReceive(int source_rank, int tag) {
-        int flag;
-        MPI_Status status;
+    // Try to load models from disk
+    void loadModels(const std::string& modelPath) {
+        if (modelPath.empty()) return;
         
-        // Check if there's an incoming message
-        MPI_Iprobe(source_rank, tag, MPI_COMM_WORLD, &flag, &status);
-        
-        if (flag && count < capacity) {
-            // Receive the data
-            MPI_Recv(buffer[write_pos].data(), entry_size, MPI_CHAR, 
-                    status.MPI_SOURCE, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        for (size_t p = 0; p < models.size(); p++) {
+            // First try to load a specific checkpoint if specified
+            std::string filepath = modelPath + "/model_" + std::to_string(p) + "_latest.bin";
             
-            write_pos = (write_pos + 1) % capacity;
-            count++;
-            return true;
+            // Check if file exists
+            if (std::filesystem::exists(filepath)) {
+                // In a real implementation, we would load the model from disk
+                // For this dummy version, we'll just generate new random data
+                models[p]->generateRandomData();
+                latest_versions[p].store(models[p]->getVersion());
+                
+                std::stringstream ss;
+                ss << "Loaded model " << p << " from disk, version: " << models[p]->getVersion() << std::endl;
+                std::cerr << ss.str();
+            }
+        }
+    }
+
+    // Save a specific model to disk with versioned filename
+    void saveModel(size_t player_index, uint64_t current_iteration = 0) {
+        if (player_index >= models.size() || !models[player_index]) {
+            std::cerr << "Error: Invalid model index or null model: " << player_index << std::endl;
+            return;
         }
         
-        return false;
-    }
-
-    // Get a batch of entries
-    std::vector<std::vector<char>> getBatch(size_t batch_size) {
-        std::vector<std::vector<char>> batch;
-        
-        size_t available = std::min(batch_size, count);
-        for (size_t i = 0; i < available; i++) {
-            batch.push_back(buffer[read_pos]);
-            read_pos = (read_pos + 1) % capacity;
-            count--;
+        // Create a deep copy of the model
+        std::shared_ptr<Model> model_copy = models[player_index]->createCopy();
+        if (!model_copy) {
+            std::cerr << "Error: Failed to create model copy for player " << player_index << std::endl;
+            return;
         }
         
-        return batch;
+        // Create timestamped filename
+        std::string versioned_filepath = model_directory + "/model_" + std::to_string(player_index) + "_" + std::to_string(current_iteration) + ".bin";
+        
+        // In a real implementation, we would save the model to disk
+        std::stringstream ss;
+        ss << "Saved checkpoint for player " << player_index << " at iteration " << current_iteration 
+                  << " to " << versioned_filepath << std::endl;
+        std::cerr << ss.str();
+    }
+    
+    // Save all models to disk (for final checkpoints or manual saving)
+    void saveAllModels(uint64_t current_iteration = 0) {
+        for (size_t p = 0; p < models.size(); p++) {
+            saveModel(p, current_iteration);
+        }
     }
 
-    // Check if we have enough data for a batch
-    bool hasData(size_t batch_size) const {
-        return count >= batch_size;
+    // Get a specific model
+    std::shared_ptr<Model> getModel(size_t player_index) {
+        if (player_index < models.size()) {
+            return models[player_index];
+        }
+        return nullptr;
     }
 
-    size_t getCount() const {
-        return count;
+    // Update a model
+    void updateModel(size_t player_index, const std::shared_ptr<Model>& new_model) {
+        if (player_index >= models.size()) return;
+        
+        models[player_index] = new_model;
+        latest_versions[player_index].store(new_model->getVersion());
+    }
+
+    // Get the latest version for a model
+    uint64_t getLatestVersion(size_t player_index) {
+        if (player_index < latest_versions.size()) {
+            return latest_versions[player_index].load();
+        }
+        return 0;
     }
 };
 
-#endif // DATA_MPI_H
+#endif // DATA_STRUCTURES_MPI_H

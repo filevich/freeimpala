@@ -1,10 +1,17 @@
 #ifndef LEARNER_MPI_H
 #define LEARNER_MPI_H
 
+#include <mpi.h>
+#include <queue>
+#include <vector>
+#include <thread>
+#include <atomic>
+#include <chrono>
+#include <iostream>
+#include <sstream>
+#include <algorithm>
 #include "data_structures_mpi.h"
 #include "metrics_tracker.h"
-#include <sstream>
-#include <thread>
 
 class LearnerMPI {
 private:
@@ -17,83 +24,115 @@ private:
     size_t checkpoint_frequency;
     std::string checkpoint_location;
     std::string starting_model;
-    size_t total_iterations;
     size_t num_agents;
-    int world_size;
+    size_t total_iterations;
     
-    // Models and buffers
-    std::vector<std::shared_ptr<Model>> models;
-    std::vector<std::unique_ptr<MPIReceiveBuffer>> receive_buffers;
-    std::vector<uint64_t> checkpoint_counters;
-    
-    // State
+    // Data structures
+    std::shared_ptr<ModelManager> model_manager;
+    std::vector<std::queue<std::vector<char>>> player_buffers;
+    std::vector<size_t> training_counts;
     std::atomic<bool> should_stop;
-    std::vector<size_t> iteration_counts;
-
-    // Training function (simulated with sleep)
-    void trainModel(size_t player_index, const std::vector<std::vector<char>>& batch) {
+    std::mutex buffer_mutex;
+    
+    // Checkpoint threads
+    std::vector<std::thread> checkpoint_threads;
+    std::mutex checkpoint_mutex;
+    
+    // Process incoming messages
+    void processMessages() {
+        MPI_Status status;
+        int flag;
+        
+        // Non-blocking check for messages
+        MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+        
+        while (flag) {
+            int source = status.MPI_SOURCE;
+            int tag = status.MPI_TAG;
+            
+            if (tag == DATA_TAG) {
+                // Receive player index
+                int player_index;
+                MPI_Recv(&player_index, 1, MPI_INT, source, DATA_TAG, MPI_COMM_WORLD, &status);
+                
+                // Receive data
+                size_t data_size = entry_size * ELEMENT_SIZE;
+                std::vector<char> data(data_size);
+                MPI_Recv(data.data(), data_size, MPI_BYTE, source, DATA_TAG, MPI_COMM_WORLD, &status);
+                
+                // Add to buffer
+                {
+                    std::lock_guard<std::mutex> lock(buffer_mutex);
+                    player_buffers[player_index].push(data);
+                }
+            }
+            else if (tag == VERSION_REQUEST_TAG) {
+                // Receive player index
+                int player_index;
+                MPI_Recv(&player_index, 1, MPI_INT, source, VERSION_REQUEST_TAG, MPI_COMM_WORLD, &status);
+                
+                // Send back version
+                uint64_t version = model_manager->getLatestVersion(player_index);
+                MPI_Send(&version, 1, MPI_UNSIGNED_LONG_LONG, source, VERSION_REQUEST_TAG, MPI_COMM_WORLD);
+            }
+            else if (tag == MODEL_REQUEST_TAG) {
+                // Receive player index
+                int player_index;
+                MPI_Recv(&player_index, 1, MPI_INT, source, MODEL_REQUEST_TAG, MPI_COMM_WORLD, &status);
+                
+                // Get model data
+                auto model = model_manager->getModel(player_index);
+                std::vector<char> model_data = model->getData();
+                uint64_t version = model->getVersion();
+                
+                // Send model data
+                MPI_Send(&version, 1, MPI_UNSIGNED_LONG_LONG, source, MODEL_REQUEST_TAG, MPI_COMM_WORLD);
+                MPI_Send(model_data.data(), model_data.size(), MPI_BYTE, source, MODEL_REQUEST_TAG, MPI_COMM_WORLD);
+            }
+            
+            // Check for next message
+            MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+        }
+    }
+    
+    // Train model for a player
+    void trainModel(size_t player_index) {
         auto metrics = MetricsTracker::getInstance();
         auto timer = metrics->createTrainingTimer();
         
         // Sleep to simulate training time
         std::this_thread::sleep_for(std::chrono::milliseconds(train_time_ms));
         
-        // For the dummy implementation, just increment version and generate new random data
-        models[player_index]->generateRandomData();
+        // For the dummy implementation, create a new model with random data
+        auto current_model = model_manager->getModel(player_index);
+        auto new_model = current_model->createCopy();
+        new_model->generateRandomData();
+        
+        // Update the model
+        model_manager->updateModel(player_index, new_model);
         
         // Record training metrics
         metrics->recordLearnerModelUpdate();
     }
     
-    // Broadcast model update to all agents
-    void broadcastModelUpdate(size_t player_index) {
-        auto metrics = MetricsTracker::getInstance();
-        auto timer = metrics->createSyncTimer();
+    // Checkpoint function for a specific player's model
+    void checkpointModel(size_t player_index) {
+        std::lock_guard<std::mutex> lock(checkpoint_mutex);
         
-        // First, signal all agents that a model update is coming
-        for (int rank = 1; rank < world_size; rank++) {
-            int player_idx = static_cast<int>(player_index);
-            MPI_Send(&player_idx, 1, MPI_INT, rank, TAG_MODEL_UPDATE, MPI_COMM_WORLD);
+        // Clean up completed checkpoint threads
+        for (auto it = checkpoint_threads.begin(); it != checkpoint_threads.end();) {
+            if (it->joinable()) {
+                it->join();
+                it = checkpoint_threads.erase(it);
+            } else {
+                ++it;
+            }
         }
         
-        // Now do the broadcast
-        uint64_t version = models[player_index]->getVersion();
-        const auto& data = models[player_index]->getData();
-        
-        // Broadcast version first
-        MPI_Bcast(&version, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-        
-        // Then broadcast model data
-        MPI_Bcast(const_cast<char*>(data.data()), data.size(), MPI_CHAR, 0, MPI_COMM_WORLD);
-        
-        std::stringstream ss;
-        ss << "Learner: Broadcasted model " << player_index << " version " << version << std::endl;
-        std::cerr << ss.str();
-    }
-    
-    // Save model checkpoint
-    void saveModelCheckpoint(size_t player_index, size_t iteration) {
-        std::string timestamp = std::to_string(iteration);
-        std::string versioned_filepath = checkpoint_location + "/model_" + 
-                                       std::to_string(player_index) + "_" + timestamp + ".bin";
-        std::string latest_filepath = checkpoint_location + "/model_" + 
-                                    std::to_string(player_index) + "_latest.bin";
-        
-        // Create a model with the versioned filepath
-        auto checkpoint_model = std::make_shared<Model>(models[player_index]->getSize(), versioned_filepath);
-        checkpoint_model->update(models[player_index]->getData(), models[player_index]->getVersion());
-        
-        if (checkpoint_model->saveToDisk()) {
-            std::stringstream ss;
-            ss << "Learner: Saved checkpoint for player " << player_index 
-               << " at iteration " << iteration << std::endl;
-            std::cerr << ss.str();
-            
-            // Also save as latest
-            auto latest_model = std::make_shared<Model>(models[player_index]->getSize(), latest_filepath);
-            latest_model->update(models[player_index]->getData(), models[player_index]->getVersion());
-            latest_model->saveToDisk();
-        }
+        // Start a new checkpoint thread
+        checkpoint_threads.emplace_back([this, player_index] {
+            model_manager->saveModel(player_index, training_counts[player_index]);
+        });
     }
 
 public:
@@ -106,9 +145,8 @@ public:
         size_t c,          // Checkpoint frequency
         const std::string& l,  // Checkpoint location
         const std::string& m,  // Starting model
-        size_t T,          // Total iterations
         size_t a,          // Number of agents
-        int ws             // World size
+        size_t T           // Total iterations
     ) : 
         num_players(p),
         buffer_capacity(B),
@@ -118,116 +156,99 @@ public:
         checkpoint_frequency(c),
         checkpoint_location(l),
         starting_model(m),
-        total_iterations(T),
         num_agents(a),
-        world_size(ws),
+        total_iterations(T),
         should_stop(false),
-        iteration_counts(p, 0),
-        checkpoint_counters(p, 0)
+        player_buffers(p),
+        training_counts(p, 0)
     {
-        // Create models for each player
-        for (size_t i = 0; i < num_players; i++) {
-            std::string filepath = checkpoint_location + "/model_" + std::to_string(i) + "_latest.bin";
-            models.push_back(std::make_shared<Model>(6 * 1024 * 1024, filepath)); // 6MB model
-            
-            // Try to load from disk if starting model specified
-            if (!starting_model.empty()) {
-                std::string load_path = starting_model + "/model_" + std::to_string(i) + "_latest.bin";
-                auto temp_model = std::make_shared<Model>(6 * 1024 * 1024, load_path);
-                if (temp_model->loadFromDisk()) {
-                    models[i]->update(temp_model->getData(), temp_model->getVersion());
-                    std::stringstream ss;
-                    ss << "Learner: Loaded model " << i << " from " << load_path 
-                       << ", version: " << models[i]->getVersion() << std::endl;
-                    std::cerr << ss.str();
-                }
-            }
-            
-            // Create receive buffer for this player
-            receive_buffers.push_back(std::make_unique<MPIReceiveBuffer>(entry_size, buffer_capacity));
-        }
+        // Create model manager
+        model_manager = std::make_shared<ModelManager>(
+            num_players, 
+            6 * 1024 * 1024,  // 6MB for dummy model
+            checkpoint_location
+        );
         
-        // Send initial models to all agents
-        for (size_t i = 0; i < num_players; i++) {
-            broadcastModelUpdate(i);
+        // Try to load models if specified
+        if (!starting_model.empty()) {
+            model_manager->loadModels(starting_model);
         }
     }
     
-    // Main learner loop
+    ~LearnerMPI() {
+        // Join any remaining checkpoint threads
+        {
+            std::lock_guard<std::mutex> lock(checkpoint_mutex);
+            for (auto& thread : checkpoint_threads) {
+                if (thread.joinable()) {
+                    thread.join();
+                }
+            }
+        }
+    }
+    
+    // Run the learner
     void run() {
         auto metrics = MetricsTracker::getInstance();
-        bool all_done = false;
+        metrics->start();
         
-        while (!should_stop && !all_done) {
-            all_done = true;
+        size_t total_batches = (num_agents * total_iterations * num_players) / batch_size;
+        
+        while (!should_stop) {
+            // Process incoming messages
+            processMessages();
             
-            // Process each player
+            // Check if we have enough data to train
+            bool trained = false;
             for (size_t p = 0; p < num_players; p++) {
-                if (iteration_counts[p] >= total_iterations) {
-                    continue;
-                }
-                
-                all_done = false;
-                
-                // Try to receive data from any agent for this player
-                int tag = TAG_DATA_TRANSFER + p;
-                bool received_any = false;
-                
-                // Check all agents
-                for (size_t a = 0; a < num_agents; a++) {
-                    int agent_rank = a + 1; // Agents start at rank 1
-                    if (receive_buffers[p]->tryReceive(agent_rank, tag)) {
-                        received_any = true;
-                        metrics->recordDataTransfer();
+                std::lock_guard<std::mutex> lock(buffer_mutex);
+                if (player_buffers[p].size() >= batch_size && training_counts[p] < total_batches) {
+                    // Form batch
+                    std::vector<std::vector<char>> batch;
+                    for (size_t i = 0; i < batch_size; i++) {
+                        batch.push_back(player_buffers[p].front());
+                        player_buffers[p].pop();
                     }
-                }
-                
-                // If we have enough data for a batch, train
-                if (receive_buffers[p]->hasData(batch_size)) {
-                    auto batch = receive_buffers[p]->getBatch(batch_size);
                     
-                    // Train the model
-                    trainModel(p, batch);
-                    
-                    // Broadcast updated model
-                    broadcastModelUpdate(p);
-                    
-                    // Increment iteration count
-                    iteration_counts[p]++;
+                    // Train model
+                    trainModel(p);
+                    training_counts[p]++;
                     
                     // Checkpoint if needed
-                    if (checkpoint_frequency > 0 && iteration_counts[p] % checkpoint_frequency == 0) {
-                        saveModelCheckpoint(p, iteration_counts[p]);
+                    if (checkpoint_frequency > 0 && training_counts[p] % checkpoint_frequency == 0) {
+                        checkpointModel(p);
                     }
+                    
+                    trained = true;
                 }
             }
             
-            // Small sleep to prevent busy waiting
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            // Check if all training is complete
+            bool all_done = true;
+            for (size_t p = 0; p < num_players; p++) {
+                if (training_counts[p] < total_batches) {
+                    all_done = false;
+                    break;
+                }
+            }
+            
+            if (all_done) {
+                should_stop = true;
+                // Send termination signal to agents
+                for (int i = 1; i <= num_agents; i++) {
+                    MPI_Send(nullptr, 0, MPI_BYTE, i, TERMINATE_TAG, MPI_COMM_WORLD);
+                }
+                break;
+            }
+            
+            // Sleep if no training occurred to avoid busy waiting
+            if (!trained) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
         }
         
-        // Send shutdown signal to all agents
-        std::stringstream ss;
-        ss << "Learner: Sending shutdown signal to all agents" << std::endl;
-        std::cerr << ss.str();
-        
-        for (int rank = 1; rank < world_size; rank++) {
-            int shutdown = 1;
-            MPI_Send(&shutdown, 1, MPI_INT, rank, TAG_SHUTDOWN, MPI_COMM_WORLD);
-        }
-        
-        // Final checkpoint
-        ss.str("");
-        ss << "Learner: Performing final checkpoint" << std::endl;
-        std::cerr << ss.str();
-        
-        for (size_t p = 0; p < num_players; p++) {
-            saveModelCheckpoint(p, iteration_counts[p]);
-        }
-    }
-    
-    void stop() {
-        should_stop = true;
+        // Save final model state
+        model_manager->saveAllModels(total_batches);
     }
 };
 

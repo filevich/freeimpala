@@ -1,15 +1,20 @@
 #ifndef AGENT_MPI_H
 #define AGENT_MPI_H
 
+#include <mpi.h>
+#include <vector>
+#include <thread>
+#include <atomic>
+#include <chrono>
+#include <iostream>
+#include <sstream>
+#include <random>
 #include "data_structures_mpi.h"
 #include "metrics_tracker.h"
-#include <sstream>
-#include <thread>
 
 class AgentMPI {
 private:
     // Configuration
-    int agent_rank;
     size_t agent_id;
     size_t num_players;
     size_t entry_size;
@@ -17,12 +22,10 @@ private:
     size_t game_time_ms;
     size_t total_iterations;
     
-    // Local buffers and models
+    // Local state
     std::vector<std::shared_ptr<Buffer>> local_buffers;
     std::vector<std::shared_ptr<Model>> local_models;
     std::vector<uint64_t> current_model_versions;
-    
-    // State
     std::atomic<bool> should_stop;
     
     // Simulate playing the game
@@ -62,178 +65,122 @@ private:
         }
     }
     
-    // Send data to learner via MPI
-    void sendDataToLearner(size_t player_index) {
+    // Transfer data to learner
+    void transferData() {
         auto metrics = MetricsTracker::getInstance();
         auto timer = metrics->createTransferTimer();
         
-        auto& entry = local_buffers[player_index]->getEntry();
-        
-        if (entry.filled) {
-            int tag = TAG_DATA_TRANSFER + player_index;
+        for (size_t p = 0; p < num_players; p++) {
+            auto& local_buffer = local_buffers[p];
             
-            // Send to learner (rank 0)
-            MPI_Send(entry.data.data(), entry.data.size(), MPI_CHAR, 0, tag, MPI_COMM_WORLD);
-            
-            metrics->recordDataTransfer();
-            
-            // Reset the buffer after sending
-            entry.filled = false;
+            // If local buffer is filled, transfer to learner
+            if (local_buffer->getEntry().filled) {
+                // Send player index
+                MPI_Send(&p, 1, MPI_INT, 0, DATA_TAG, MPI_COMM_WORLD);
+                
+                // Send data
+                MPI_Send(local_buffer->getEntry().data.data(), 
+                         local_buffer->getEntry().data.size(), 
+                         MPI_BYTE, 0, DATA_TAG, MPI_COMM_WORLD);
+                
+                metrics->recordDataTransfer();
+            }
         }
     }
     
-    // Check for model updates via MPI - only when signaled by learner
-    bool checkForModelUpdateSignal() {
-        int flag;
-        MPI_Status status;
-        
-        // Check if learner is signaling a model update
-        MPI_Iprobe(0, TAG_MODEL_UPDATE, MPI_COMM_WORLD, &flag, &status);
-        
-        if (flag) {
-            // Receive the signal
-            int player_index;
-            MPI_Recv(&player_index, 1, MPI_INT, 0, TAG_MODEL_UPDATE, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            
-            // Now participate in the broadcast for this specific player
-            receiveModelUpdate(player_index);
-            return true;
-        }
-        
-        return false;
-    }
-    
-    // Receive model update for a specific player
-    void receiveModelUpdate(size_t player_index) {
+    // Check for model updates
+    void checkModelUpdates() {
         auto metrics = MetricsTracker::getInstance();
         auto timer = metrics->createSyncTimer();
         
-        // Participate in broadcast for version (learner is root)
-        uint64_t new_version;
-        MPI_Bcast(&new_version, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-        
-        // Participate in broadcast for model data
-        std::vector<char> model_data(local_models[player_index]->getSize());
-        MPI_Bcast(model_data.data(), model_data.size(), MPI_CHAR, 0, MPI_COMM_WORLD);
-        
-        // Update if this is a new version
-        if (new_version > current_model_versions[player_index]) {
-            local_models[player_index]->update(model_data, new_version);
-            current_model_versions[player_index] = new_version;
+        for (size_t p = 0; p < num_players; p++) {
+            // Request latest version from learner
+            MPI_Send(&p, 1, MPI_INT, 0, VERSION_REQUEST_TAG, MPI_COMM_WORLD);
             
-            std::stringstream ss;
-            ss << "Agent " << agent_id << ": Updated model " << player_index 
-               << " to version " << new_version << std::endl;
-            std::cerr << ss.str();
+            uint64_t latest_version;
+            MPI_Recv(&latest_version, 1, MPI_UNSIGNED_LONG_LONG, 0, 
+                     VERSION_REQUEST_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             
-            metrics->recordAgentModelSync();
+            if (latest_version > current_model_versions[p]) {
+                // Request new model
+                MPI_Send(&p, 1, MPI_INT, 0, MODEL_REQUEST_TAG, MPI_COMM_WORLD);
+                
+                // Receive version and model data
+                uint64_t new_version;
+                MPI_Recv(&new_version, 1, MPI_UNSIGNED_LONG_LONG, 0, 
+                         MODEL_REQUEST_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                
+                std::vector<char> model_data(6 * 1024 * 1024);
+                MPI_Recv(model_data.data(), model_data.size(), MPI_BYTE, 0,
+                         MODEL_REQUEST_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                
+                // Update local model
+                local_models[p]->setData(model_data, new_version);
+                current_model_versions[p] = new_version;
+                
+                metrics->recordAgentModelSync();
+            }
         }
-    }
-    
-    // Check for shutdown signal
-    bool checkShutdown() {
-        int flag;
-        MPI_Status status;
-        
-        MPI_Iprobe(0, TAG_SHUTDOWN, MPI_COMM_WORLD, &flag, &status);
-        
-        if (flag) {
-            int shutdown;
-            MPI_Recv(&shutdown, 1, MPI_INT, 0, TAG_SHUTDOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            return true;
-        }
-        
-        return false;
     }
 
 public:
     AgentMPI(
-        int rank,          // MPI rank
-        size_t id,         // Agent ID (0-based among agents)
+        size_t id,         // Agent ID
         size_t p,          // Number of players
         size_t S,          // Entry size
         size_t steps,      // Game steps
         size_t r,          // Game time (ms)
         size_t T           // Total iterations
     ) : 
-        agent_rank(rank),
         agent_id(id),
         num_players(p),
         entry_size(S),
         game_steps(steps),
         game_time_ms(r),
         total_iterations(T),
-        should_stop(false)
+        should_stop(false),
+        current_model_versions(p, 0)
     {
         // Create local buffers for each player
         for (size_t i = 0; i < num_players; i++) {
-            local_buffers.push_back(std::make_shared<Buffer>(entry_size));
-            
-            // Create local models
-            std::string dummy_path = "/tmp/agent_" + std::to_string(agent_id) + "_model_" + std::to_string(i);
-            local_models.push_back(std::make_shared<Model>(6 * 1024 * 1024, dummy_path));
-            current_model_versions.push_back(0);
+            local_buffers.push_back(std::make_shared<Buffer>(entry_size * ELEMENT_SIZE));
         }
         
-        // Receive initial models from learner
+        // Create initial local models
         for (size_t i = 0; i < num_players; i++) {
-            // Wait for initial model signal
-            int player_index;
-            MPI_Recv(&player_index, 1, MPI_INT, 0, TAG_MODEL_UPDATE, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            
-            // Receive the model
-            receiveModelUpdate(player_index);
+            local_models.push_back(std::make_shared<Model>(6 * 1024 * 1024, ""));
         }
-        
-        std::stringstream ss;
-        ss << "Agent " << agent_id << " (rank " << agent_rank << ") initialized" << std::endl;
-        std::cerr << ss.str();
     }
     
-    // Run the agent's main loop
+    // Run the agent
     void run() {
         auto metrics = MetricsTracker::getInstance();
         size_t iteration = 0;
         
         while (!should_stop && iteration < total_iterations) {
-            // Check for shutdown signal
-            if (checkShutdown()) {
-                std::stringstream ss;
-                ss << "Agent " << agent_id << ": Received shutdown signal" << std::endl;
-                std::cerr << ss.str();
-                break;
-            }
-            
-            // Record the start of an agent iteration
             metrics->startAgentIteration(agent_id);
             
             // Step 1: Simulate the game
             simulateGame();
             
-            // Step 2: Send data to learner for each player
-            for (size_t p = 0; p < num_players; p++) {
-                sendDataToLearner(p);
-            }
+            // Step 2: Transfer data to learner
+            transferData();
             
-            // Step 3: Check for model updates (non-blocking)
-            while (checkForModelUpdateSignal()) {
-                // Process any pending model updates
-            }
+            // Step 3: Check for model updates
+            checkModelUpdates();
             
-            // Record the end of an agent iteration
             metrics->endAgentIteration(agent_id);
-            
-            // Increment iteration counter
             iteration++;
+            
+            // Check for termination signal
+            int flag;
+            MPI_Iprobe(0, TERMINATE_TAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
+            if (flag) {
+                should_stop = true;
+                // Consume the termination message
+                MPI_Recv(nullptr, 0, MPI_BYTE, 0, TERMINATE_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            }
         }
-        
-        std::stringstream ss;
-        ss << "Agent " << agent_id << ": Completed " << iteration << " iterations" << std::endl;
-        std::cerr << ss.str();
-    }
-    
-    void stop() {
-        should_stop = true;
     }
 };
 

@@ -4,6 +4,7 @@
 #include <iostream>
 #include <memory>
 #include <sstream>
+#include <thread>
 #include <vector>
 #include <ctime>
 #include <cmath>
@@ -30,8 +31,8 @@ struct ProgramParams {
 
 // Setup argument parser with all parameters
 argparse::ArgumentParser setupArgumentParser() {
-    argparse::ArgumentParser program("freeimpala-mpi");
-    program.add_description("MPI-based parallel consumer-producer system for game simulation");
+    argparse::ArgumentParser program("freeimpala_mpi");
+    program.add_description("Distributed IMPALA implementation using MPI");
 
     // General parameters
     program.add_argument("-p", "--players")
@@ -112,6 +113,7 @@ bool parseParameters(
     char** argv,
     ProgramParams& params
 ) {
+    std::stringstream ss;
     auto program = setupArgumentParser();
     
     try {
@@ -141,7 +143,7 @@ bool parseParameters(
 }
 
 // Validate parameters
-bool validateParameters(const ProgramParams& params, int world_size) {
+bool validateParameters(const ProgramParams& params) {
     std::stringstream ss;
 
     if (params.batch_size > params.buffer_capacity) {
@@ -156,56 +158,92 @@ bool validateParameters(const ProgramParams& params, int world_size) {
         return false;
     }
     
-    if (world_size != params.num_agents + 1) {
-        ss << "Error: MPI world size (" << world_size << ") must equal num_agents + 1 (learner)" << std::endl;
-        ss << "Please run with: mpirun -n " << (params.num_agents + 1) << " ..." << std::endl;
-        std::cerr << ss.str();
-        return false;
-    }
-    
     return true;
 }
 
+// Broadcast parameters to all processes
+void broadcastParameters(ProgramParams& params, int root = 0) {
+    MPI_Bcast(&params.num_players, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
+    MPI_Bcast(&params.total_iterations, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
+    MPI_Bcast(&params.entry_size, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
+    MPI_Bcast(&params.buffer_capacity, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
+    MPI_Bcast(&params.batch_size, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
+    MPI_Bcast(&params.learner_time, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
+    MPI_Bcast(&params.checkpoint_freq, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
+    MPI_Bcast(&params.num_agents, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
+    MPI_Bcast(&params.game_steps, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
+    MPI_Bcast(&params.agent_time, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
+    MPI_Bcast(&params.seed, 1, MPI_UNSIGNED, root, MPI_COMM_WORLD);
+    
+    // Broadcast strings
+    int loc_len = params.checkpoint_location.size() + 1;
+    MPI_Bcast(&loc_len, 1, MPI_INT, root, MPI_COMM_WORLD);
+    char* loc_buf = new char[loc_len];
+    if (MPI_Comm_rank(MPI_COMM_WORLD, nullptr) == root) {
+        strcpy(loc_buf, params.checkpoint_location.c_str());
+    }
+    MPI_Bcast(loc_buf, loc_len, MPI_CHAR, root, MPI_COMM_WORLD);
+    params.checkpoint_location = std::string(loc_buf);
+    delete[] loc_buf;
+    
+    int model_len = params.starting_model.size() + 1;
+    MPI_Bcast(&model_len, 1, MPI_INT, root, MPI_COMM_WORLD);
+    char* model_buf = new char[model_len];
+    if (MPI_Comm_rank(MPI_COMM_WORLD, nullptr) == root) {
+        strcpy(model_buf, params.starting_model.c_str());
+    }
+    MPI_Bcast(model_buf, model_len, MPI_CHAR, root, MPI_COMM_WORLD);
+    params.starting_model = std::string(model_buf);
+    delete[] model_buf;
+    
+    int metrics_len = params.metrics_file.size() + 1;
+    MPI_Bcast(&metrics_len, 1, MPI_INT, root, MPI_COMM_WORLD);
+    char* metrics_buf = new char[metrics_len];
+    if (MPI_Comm_rank(MPI_COMM_WORLD, nullptr) == root) {
+        strcpy(metrics_buf, params.metrics_file.c_str());
+    }
+    MPI_Bcast(metrics_buf, metrics_len, MPI_CHAR, root, MPI_COMM_WORLD);
+    params.metrics_file = std::string(metrics_buf);
+    delete[] metrics_buf;
+}
+
 int main(int argc, char** argv) {
-    // Initialize MPI
     MPI_Init(&argc, &argv);
     
     int world_rank, world_size;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-    
+
     ProgramParams params;
+    bool parse_success = true;
     
-    // Parse and validate parameters
-    if (!parseParameters(argc, argv, params)) {
+    // Root process parses parameters
+    if (world_rank == 0) {
+        parse_success = parseParameters(argc, argv, params);
+        if (parse_success) {
+            parse_success = validateParameters(params);
+        }
+    }
+    
+    // Broadcast parse status
+    MPI_Bcast(&parse_success, 1, MPI_C_BOOL, 0, MPI_COMM_WORLD);
+    if (!parse_success) {
         MPI_Finalize();
         return 1;
     }
-    
-    if (!validateParameters(params, world_size)) {
-        MPI_Finalize();
-        return 1;
-    }
-    
-    // Set random seed with rank offset to ensure different seeds per process
+
+    // Broadcast parameters to all processes
+    broadcastParameters(params, 0);
+
+    // Set random seed per agent
     std::srand(params.seed + world_rank);
-    
-    // Initialize metrics tracker for this process
+
+    // Initialize metrics
     auto metrics = MetricsTracker::getInstance();
     metrics->start();
-    
+
     if (world_rank == 0) {
-        // Rank 0 is the learner
-        std::stringstream ss;
-        ss << "Starting Learner process (rank 0)" << std::endl;
-        std::cerr << ss.str();
-        
-        // Calculate learner iterations
-        size_t learner_iterations = std::ceil(
-            static_cast<double>(params.num_agents * params.total_iterations) / params.batch_size
-        );
-        
-        // Create and run learner
+        // Learner process
         LearnerMPI learner(
             params.num_players,
             params.buffer_capacity,
@@ -215,68 +253,29 @@ int main(int argc, char** argv) {
             params.checkpoint_freq,
             params.checkpoint_location,
             params.starting_model,
-            learner_iterations,
-            params.num_agents,
-            world_size
+            world_size - 1,  // num_agents
+            params.total_iterations
         );
-        
         learner.run();
-        
-        // Print learner metrics
-        metrics->stop();
-        ss.str("");
-        ss << "\n===== Learner Metrics =====\n";
-        std::cerr << ss.str();
-        metrics->printMetricsSummary();
-        
-        if (!params.metrics_file.empty()) {
-            std::string learner_metrics_file = params.metrics_file + ".learner.csv";
-            metrics->saveMetricsToCSV(learner_metrics_file);
-            ss.str("");
-            ss << "Learner metrics saved to " << learner_metrics_file << std::endl;
-            std::cerr << ss.str();
-        }
-        
     } else {
-        // Other ranks are agents
-        size_t agent_id = world_rank - 1;  // Agent IDs start at 0
-        
-        std::stringstream ss;
-        ss << "Starting Agent " << agent_id << " (rank " << world_rank << ")" << std::endl;
-        std::cerr << ss.str();
-        
-        // Create and run agent
+        // Agent process
         AgentMPI agent(
-            world_rank,
-            agent_id,
+            world_rank - 1,  // agent_id
             params.num_players,
             params.entry_size,
             params.game_steps,
             params.agent_time,
             params.total_iterations
         );
-        
         agent.run();
-        
-        // Print agent metrics
-        metrics->stop();
-        ss.str("");
-        ss << "\n===== Agent " << agent_id << " Metrics =====\n";
-        std::cerr << ss.str();
-        metrics->printMetricsSummary();
-        
-        if (!params.metrics_file.empty()) {
-            std::string agent_metrics_file = params.metrics_file + ".agent" + 
-                                           std::to_string(agent_id) + ".csv";
-            metrics->saveMetricsToCSV(agent_metrics_file);
-            ss.str("");
-            ss << "Agent " << agent_id << " metrics saved to " << agent_metrics_file << std::endl;
-            std::cerr << ss.str();
-        }
+    }
+
+    // Finalize metrics and MPI
+    metrics->printMetricsSummary();
+    if (!params.metrics_file.empty() && world_rank == 0) {
+        metrics->saveMetricsToCSV(params.metrics_file);
     }
     
-    // Finalize MPI
     MPI_Finalize();
-    
     return 0;
 }
