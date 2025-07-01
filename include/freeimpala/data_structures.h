@@ -18,6 +18,13 @@
 #include <queue>
 #include <functional>
 
+enum : int {
+    TAG_TRAJECTORY_BASE = 100,   // TAG_TRAJECTORY_BASE + player_idx
+    TAG_MODEL_UPDATE    = 200,    // optional – not wired yet
+    TAG_TERMINATE       = 999
+};
+
+
 // Size of each element in bytes
 constexpr size_t ELEMENT_SIZE = 1024;
 

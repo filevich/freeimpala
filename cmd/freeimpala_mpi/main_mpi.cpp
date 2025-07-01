@@ -1,4 +1,3 @@
-#include <mpi.h>
 #include <argparse/argparse.hpp>
 #include <chrono>
 #include <iostream>
@@ -8,8 +7,9 @@
 #include <vector>
 #include <ctime>
 #include <cmath>
-#include "freeimpala/learner_mpi.h"
-#include "freeimpala/agent_mpi.h"
+#include "freeimpala/learner.h"
+#include "freeimpala/agent.h"
+#include <mpi.h>
 
 // Structure to hold all command-line parameters
 struct ProgramParams {
@@ -22,6 +22,7 @@ struct ProgramParams {
     size_t checkpoint_freq;
     std::string checkpoint_location;
     std::string starting_model;
+    size_t num_agents;
     size_t game_steps;
     size_t agent_time;
     std::string metrics_file;
@@ -30,8 +31,8 @@ struct ProgramParams {
 
 // Setup argument parser with all parameters
 argparse::ArgumentParser setupArgumentParser() {
-    argparse::ArgumentParser program("freeimpala_mpi");
-    program.add_description("Distributed IMPALA implementation using MPI");
+    argparse::ArgumentParser program("freeimpala");
+    program.add_description("Parallel consumer-producer system for game simulation");
 
     // General parameters
     program.add_argument("-p", "--players")
@@ -79,6 +80,11 @@ argparse::ArgumentParser setupArgumentParser() {
         .default_value(std::string(""));
     
     // Agent parameters
+    program.add_argument("-a", "--agents")
+        .help("Number of agent processes")
+        .default_value(4)
+        .scan<'i', int>();
+        
     program.add_argument("--game-steps")
         .help("Number of steps in each game simulation")
         .default_value(100)
@@ -90,7 +96,7 @@ argparse::ArgumentParser setupArgumentParser() {
         .scan<'i', int>();
         
     program.add_argument("--metrics-file")
-        .help("Base name for metrics files (will append process type and rank)")
+        .help("File to save performance metrics (CSV)")
         .default_value(std::string(""));
 
     program.add_argument("--seed")
@@ -127,6 +133,7 @@ bool parseParameters(
     params.checkpoint_freq = program.get<int>("--checkpoint-freq");
     params.checkpoint_location = program.get<std::string>("--checkpoint-location");
     params.starting_model = program.get<std::string>("--starting-model");
+    params.num_agents = program.get<int>("--agents");
     params.game_steps = program.get<int>("--game-steps");
     params.agent_time = program.get<int>("--agent-time");
     params.metrics_file = program.get<std::string>("--metrics-file");
@@ -154,148 +161,214 @@ bool validateParameters(const ProgramParams& params) {
     return true;
 }
 
-// Broadcast parameters to all processes
-void broadcastParameters(ProgramParams& params, int world_rank) {
-    // Broadcast numerical parameters
-    MPI_Bcast(&params.num_players, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&params.total_iterations, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&params.entry_size, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&params.buffer_capacity, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&params.batch_size, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&params.learner_time, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&params.checkpoint_freq, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&params.game_steps, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&params.agent_time, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&params.seed, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
+// Setup and start the learner
+std::unique_ptr<Learner> setupLearner(const ProgramParams& params) {
+    std::stringstream ss;
+    ss << "Creating learner..." << std::endl;
+    std::cerr << ss.str();
+    ss.str("");
+    ss.clear();
+
+    // Correctly calculate learner iterations using floating-point division
+    size_t learner_iterations = ceil((params.num_agents * params.total_iterations) / params.batch_size);
+
+    // Create the Learner on the heap and wrap it in a std::unique_ptr.
+    auto learner = std::make_unique<Learner>(
+        params.num_players,
+        params.buffer_capacity,
+        params.entry_size,
+        params.batch_size,
+        params.learner_time,
+        params.checkpoint_freq,
+        params.checkpoint_location,
+        params.starting_model,
+        learner_iterations
+    );
+
+    ss << "Starting learner..." << std::endl;
+    std::cerr << ss.str();
+    ss.str("");
+    ss.clear();
     
-    // Broadcast strings
-    auto broadcast_string = [world_rank](std::string& str) {
-        size_t length = 0;
-        if (world_rank == 0) length = str.size();
-        MPI_Bcast(&length, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
-        
-        char* buffer = new char[length + 1];
-        if (world_rank == 0) strcpy(buffer, str.c_str());
-        MPI_Bcast(buffer, length + 1, MPI_CHAR, 0, MPI_COMM_WORLD);
-        if (world_rank != 0) str = std::string(buffer);
-        delete[] buffer;
-    };
-    
-    broadcast_string(params.checkpoint_location);
-    broadcast_string(params.starting_model);
-    broadcast_string(params.metrics_file);
+    // Start learner
+    learner->start();
+
+    return learner;
 }
 
-int main(int argc, char** argv) {
-    MPI_Init(&argc, &argv);
-    
-    int world_rank, world_size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+// Setup and start agents
+std::vector<std::thread> setupAgents(
+    const ProgramParams& params, 
+    std::vector<std::shared_ptr<Agent>>& agents,
+    Learner& learner
+) {
+    std::stringstream ss;
+    ss << "Creating and starting " << params.num_agents << " agents..." << std::endl;
+    std::cerr << ss.str();
+    ss.str("");
+    ss.clear();
 
-    ProgramParams params;
-    bool parse_success = true;
-    
-    if (world_rank == 0) {
-        parse_success = parseParameters(argc, argv, params);
-        if (parse_success) {
-            parse_success = validateParameters(params);
-        }
-    }
-    
-    // Broadcast parse status
-    MPI_Bcast(&parse_success, 1, MPI_C_BOOL, 0, MPI_COMM_WORLD);
-    if (!parse_success) {
-        MPI_Finalize();
-        return 1;
-    }
+    std::vector<std::thread> agent_threads;
+    auto shared_buffers = learner.getSharedBuffers();
+    auto model_manager = learner.getModelManager();
 
-    // Broadcast parameters to all processes
-    broadcastParameters(params, world_rank);
-
-    // Set random seed per process
-    std::srand(params.seed + world_rank);
-
-    // Initialize metrics
-    auto metrics = MetricsTracker::getInstance();
-    metrics->start();
-
-    // Generate metrics filename based on process type
-    std::string metrics_file = params.metrics_file;
-    if (!metrics_file.empty()) {
-        if (world_rank == 0) {
-            metrics_file += "_learner.csv";
-        } else {
-            metrics_file += "_agent_" + std::to_string(world_rank - 1) + ".csv";
-        }
-    }
-
-    if (world_rank == 0) {
-        // Learner process
-        // Notice: The Learner will need to train `x` batches per player.
-        // Where `x` can be derived from the parameters as:
-        // `x = (agents * iterations) / batch_size`
-        LearnerMPI learner(
-            params.num_players,
-            params.buffer_capacity,
-            params.entry_size,
-            params.batch_size,
-            params.learner_time,
-            params.checkpoint_freq,
-            params.checkpoint_location,
-            params.starting_model,
-            world_size - 1,  // num_agents = world_size - 1
-            params.total_iterations
-        );
-        learner.run();
-    } else {
-        // Agent process
-        AgentMPI agent(
-            world_rank - 1,  // agent_id
+    for (size_t a = 0; a < params.num_agents; a++) {
+        auto agent = std::make_shared<Agent>(
+            a,
             params.num_players,
             params.entry_size,
             params.game_steps,
             params.agent_time,
-            params.total_iterations
+            params.total_iterations,
+            shared_buffers,
+            model_manager
         );
-        agent.run();
+        
+        agents.push_back(agent);
+        agent_threads.emplace_back([agent] { agent->run(); });
     }
 
-    // Finalize metrics
+    return agent_threads;
+}
+
+// Cleanup and finalize execution
+void cleanup(
+    const ProgramParams& params,
+    Learner& learner, 
+    std::vector<std::thread>& agent_threads
+) {
+    std::stringstream ss;
+    ss << "Waiting for agents to complete..." << std::endl;
+    std::cerr << ss.str();
+    ss.str("");
+    ss.clear();
+
+    for (auto& thread : agent_threads) {
+        thread.join();
+    }
+
+    ss << "Stopping learner..." << std::endl;
+    std::cerr << ss.str();
+    ss.str("");
+    ss.clear();
+    learner.stop();
+
+    auto metrics = MetricsTracker::getInstance();
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    metrics->stop();
+    
     metrics->printMetricsSummary();
-    if (!metrics_file.empty()) {
-        metrics->saveMetricsToCSV(metrics_file);
+    
+    if (!params.metrics_file.empty()) {
+        metrics->saveMetricsToCSV(params.metrics_file);
+        ss << "Metrics saved to " << params.metrics_file << std::endl;
+        std::cerr << ss.str();
+        ss.str("");
+        ss.clear();
     }
 
-    std::cerr << "Process " << world_rank << " reached MPI finalization" << std::endl;
+    ss << "Execution completed successfully" << std::endl;
+    std::cerr << ss.str();
+}
 
-    // Use MPI_Ibarrier with timeout to prevent hanging
-    MPI_Request barrier_request;
-    MPI_Ibarrier(MPI_COMM_WORLD, &barrier_request);
+// -------------------- utility --------------------
+inline std::size_t traj_bytes(const ProgramParams& p) {
+    return p.entry_size * ELEMENT_SIZE;
+}
 
-    int barrier_done = 0;
-    auto start_time = std::chrono::steady_clock::now();
+// -------------------- rank-0 (learner) thread --------------------
+void mpi_receiver(const ProgramParams& params,
+                  const std::vector<std::shared_ptr<SharedBuffer>>& buffers,
+                  std::atomic<int>& done_actors,
+                  int world_size)
+{
+    while (done_actors.load() < world_size - 1) {
+        MPI_Status st;
+        MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &st);
 
-    while (!barrier_done) {
-        MPI_Test(&barrier_request, &barrier_done, MPI_STATUS_IGNORE);
-        
-        // Timeout after 5 seconds
-        auto current_time = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time).count();
-        if (elapsed > 5) {
-            std::cerr << "Process " << world_rank << ": Barrier timeout. Finalizing MPI." << std::endl;
-            break;
+        if (st.MPI_TAG == TAG_TERMINATE) {
+            MPI_Recv(nullptr, 0, MPI_CHAR, st.MPI_SOURCE,
+                     TAG_TERMINATE, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            done_actors.fetch_add(1);
+            continue;
         }
-        
-        // Sleep to avoid busy waiting
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        int player_idx = st.MPI_TAG - TAG_TRAJECTORY_BASE;
+        int count      = 0;
+        MPI_Get_count(&st, MPI_CHAR, &count);
+
+        std::vector<char> data(count);
+        MPI_Recv(data.data(), count, MPI_CHAR, st.MPI_SOURCE,
+                 st.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        // Write into the learner’s local shared buffer – blocks if full
+        buffers[player_idx]->write(data);
+    }
+}
+
+// -------------------- modified main --------------------
+int main(int argc, char** argv)
+{
+    int provided;
+    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+    if (provided < MPI_THREAD_MULTIPLE) {
+        std::cerr << "MPI library does not provide MPI_THREAD_MULTIPLE\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    if (barrier_done) {
-        std::cerr << "Process " << world_rank << " passed barrier" << std::endl;
+    int rank, world_size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+    ProgramParams params;
+    if (!parseParameters(argc, argv, params) || !validateParameters(params)) {
+        MPI_Finalize(); return 1;
+    }
+
+    // ---- learner process --------------------------------------------------
+    if (rank == 0) {
+        auto metrics = MetricsTracker::getInstance();
+        metrics->start();
+
+        auto learner         = setupLearner(params);
+        auto shared_buffers  = learner->getSharedBuffers();
+
+        std::atomic<int> terminated{0};
+        std::thread rx(mpi_receiver, std::cref(params),
+                       std::cref(shared_buffers),
+                       std::ref(terminated),
+                       world_size);
+
+        // learner’s worker threads already started by setupLearner()
+        rx.join();               // wait until all actors have finished
+        learner->stop();
+        metrics->stop();
+        metrics->printMetricsSummary();
+        MPI_Finalize();
+        return 0;
+    }
+
+    // ---- actor processes --------------------------------------------------
+    {
+        // Each rank>0 owns ONE agent.  Re-use existing class.
+        // We pass dummy shared_buffers because the MPI send happens inside
+        // Agent::transferThread (see next section).
+        std::vector<std::shared_ptr<SharedBuffer>> dummy;
+        auto dummy_model_mgr =
+            std::make_shared<ModelManager>(params.num_players, 6*1024*1024,
+                                           params.checkpoint_location);
+
+        Agent agent(rank - 1, params.num_players,
+                    params.entry_size, params.game_steps,
+                    params.agent_time, params.total_iterations,
+                    dummy, dummy_model_mgr);
+
+        agent.run();   // same loop as before – see next section for transfer
+
+        // Tell learner we are done
+        MPI_Send(nullptr, 0, MPI_CHAR, 0, TAG_TERMINATE, MPI_COMM_WORLD);
     }
 
     MPI_Finalize();
-    std::cerr << "Process " << world_rank << " finalized MPI" << std::endl;
     return 0;
 }

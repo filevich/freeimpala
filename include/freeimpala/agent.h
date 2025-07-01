@@ -5,6 +5,10 @@
 #include "freeimpala/data_structures.h"
 #include "freeimpala/metrics_tracker.h"
 
+#ifdef USE_MPI
+    #include <mpi.h>
+#endif
+
 class Agent {
 private:
     // Configuration
@@ -73,25 +77,28 @@ private:
     // Transfer thread function (one per player)
     void transferThread(size_t player_index, std::promise<void>& promise) {
         auto metrics = MetricsTracker::getInstance();
-        auto timer = metrics->createTransferTimer();
-        
-        auto& local_buffer = local_buffers[player_index];
-        auto& shared_buffer = shared_buffers[player_index];
-        
-        // If local buffer is filled, transfer to shared buffer
-        if (local_buffer->getEntry().filled) {
-            // Use blocking write - it will wait until space is available
-            // The write function internally handles waiting via condition variables
-            bool success = shared_buffer->write(local_buffer->getEntry().data);
-            
-            if (success) {
-                metrics->recordDataTransfer();
-            } else {
-                std::cerr << "Agent " << agent_id << ": Failed to write data for player " 
-                        << player_index << " (buffer size mismatch)" << std::endl;
-            }
+        auto timer   = metrics->createTransferTimer();
+
+        auto& entry = local_buffers[player_index]->getEntry();
+
+        if (entry.filled) {
+            #ifdef USE_MPI
+                const int tag = TAG_TRAJECTORY_BASE + static_cast<int>(player_index);
+                MPI_Send(entry.data.data(),                     // buffer
+                        entry.data.size(), MPI_CHAR,
+                        0, tag, MPI_COMM_WORLD);              // to learner (rank 0)
+                metrics->recordDataTransfer();                 // always count it
+            #else
+                bool success = shared_buffers[player_index]->write(entry.data);
+                if (success) {
+                    metrics->recordDataTransfer();
+                } else {
+                    std::cerr << "Agent " << agent_id
+                            << ": failed to write data for player "
+                            << player_index << '\n';
+                }
+            #endif
         }
-        
         promise.set_value();
     }
     

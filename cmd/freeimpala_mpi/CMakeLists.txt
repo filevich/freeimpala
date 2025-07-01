@@ -34,5 +34,11 @@ target_include_directories(freeimpala_mpi
     ${MPI_CXX_INCLUDE_DIRS}
 )
 
+# Add the -DUSE_MPI compile definition ONLY for freeimpala_mpi
+target_compile_definitions(freeimpala_mpi
+    PRIVATE
+    USE_MPI
+)
+
 # Install the MPI executable
 install(TARGETS freeimpala_mpi DESTINATION bin)
