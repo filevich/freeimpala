@@ -10,6 +10,7 @@
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <set>
 #include "data_structures_mpi.h"
 #include "metrics_tracker.h"
 
@@ -33,6 +34,10 @@ private:
     std::vector<size_t> training_counts;
     std::atomic<bool> should_stop;
     std::mutex buffer_mutex;
+    
+    // Track which agents have acknowledged termination
+    std::set<int> terminated_agents;
+    std::mutex termination_mutex;
     
     // Checkpoint threads
     std::vector<std::thread> checkpoint_threads;
@@ -243,8 +248,7 @@ public:
             }
             
             if (all_done) {
-                should_stop = true;
-                break;
+                break;  // Exit the main loop but don't set should_stop yet
             }
             
             // Sleep if no training occurred to avoid busy waiting
@@ -257,14 +261,34 @@ public:
         std::cerr << "Learner completed training. Sending termination signals to " 
                 << num_agents << " agents." << std::endl;
 
-        // Send termination multiple times to ensure delivery
-        for (int retry = 0; retry < 3; retry++) {
-            for (int i = 1; i <= num_agents; i++) {
-                MPI_Send(nullptr, 0, MPI_BYTE, i, TERMINATE_TAG, MPI_COMM_WORLD);
-                std::cerr << "Sent termination signal to agent " << i << " (attempt " 
-                        << (retry + 1) << ")" << std::endl;
+        // Send initial termination signals
+        for (int i = 1; i <= num_agents; i++) {
+            MPI_Send(nullptr, 0, MPI_BYTE, i, TERMINATE_TAG, MPI_COMM_WORLD);
+            std::cerr << "Sent termination signal to rank " << i << " (agent " 
+                    << (i-1) << ")" << std::endl;
+        }
+
+        // Continue processing messages until all agents have terminated
+        // This prevents agents from getting stuck on blocking sends
+        auto termination_start = std::chrono::steady_clock::now();
+        const auto timeout = std::chrono::seconds(10);
+        
+        while (terminated_agents.size() < num_agents) {
+            // Process any pending messages from agents
+            processMessages();
+            
+            // Check for termination acknowledgments (agents will close after receiving termination)
+            // In this implementation, we just wait for a timeout since agents don't send explicit ACKs
+            
+            // Check timeout
+            auto now = std::chrono::steady_clock::now();
+            if (now - termination_start > timeout) {
+                std::cerr << "Learner: Timeout waiting for agents to terminate. Proceeding." << std::endl;
+                break;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            
+            // Small sleep to avoid busy waiting
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
         // Save final model state
