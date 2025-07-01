@@ -271,12 +271,12 @@ void cleanup(
     std::cerr << ss.str();
 }
 
-// -------------------- utility --------------------
+// utility
 inline std::size_t traj_bytes(const ProgramParams& p) {
     return p.entry_size * ELEMENT_SIZE;
 }
 
-// -------------------- rank-0 (learner) thread --------------------
+// rank-0 (learner) thread
 void mpi_receiver(const ProgramParams& params,
                   const std::vector<std::shared_ptr<SharedBuffer>>& buffers,
                   std::atomic<int>& done_actors,
@@ -306,7 +306,6 @@ void mpi_receiver(const ProgramParams& params,
     }
 }
 
-// -------------------- modified main --------------------
 int main(int argc, char** argv)
 {
     int provided;
@@ -325,7 +324,7 @@ int main(int argc, char** argv)
         MPI_Finalize(); return 1;
     }
 
-    // ---- learner process --------------------------------------------------
+    // learner process
     if (rank == 0) {
         auto metrics = MetricsTracker::getInstance();
         metrics->start();
@@ -348,9 +347,9 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    // ---- actor processes --------------------------------------------------
+    // actor processes
     {
-        // Each rank>0 owns ONE agent.  Re-use existing class.
+        // Each rank>0 owns ONE agent. Re-use existing class.
         // We pass dummy shared_buffers because the MPI send happens inside
         // Agent::transferThread (see next section).
         std::vector<std::shared_ptr<SharedBuffer>> dummy;
@@ -363,7 +362,7 @@ int main(int argc, char** argv)
                     params.agent_time, params.total_iterations,
                     dummy, dummy_model_mgr);
 
-        agent.run();   // same loop as before
+        agent.run(); // same loop as before
 
         // Tell learner we are done
         MPI_Send(nullptr, 0, MPI_CHAR, 0, TAG_TERMINATE, MPI_COMM_WORLD);
