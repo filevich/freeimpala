@@ -22,7 +22,6 @@ struct ProgramParams {
     size_t checkpoint_freq;
     std::string checkpoint_location;
     std::string starting_model;
-    size_t num_agents;
     size_t game_steps;
     size_t agent_time;
     std::string metrics_file;
@@ -80,11 +79,6 @@ argparse::ArgumentParser setupArgumentParser() {
         .default_value(std::string(""));
     
     // Agent parameters
-    program.add_argument("-a", "--agents")
-        .help("Number of agent processes")
-        .default_value(4)
-        .scan<'i', int>();
-        
     program.add_argument("--game-steps")
         .help("Number of steps in each game simulation")
         .default_value(100)
@@ -96,7 +90,7 @@ argparse::ArgumentParser setupArgumentParser() {
         .scan<'i', int>();
         
     program.add_argument("--metrics-file")
-        .help("File to save performance metrics (CSV)")
+        .help("Base name for metrics files (will append process type and rank)")
         .default_value(std::string(""));
 
     program.add_argument("--seed")
@@ -133,7 +127,6 @@ bool parseParameters(
     params.checkpoint_freq = program.get<int>("--checkpoint-freq");
     params.checkpoint_location = program.get<std::string>("--checkpoint-location");
     params.starting_model = program.get<std::string>("--starting-model");
-    params.num_agents = program.get<int>("--agents");
     params.game_steps = program.get<int>("--game-steps");
     params.agent_time = program.get<int>("--agent-time");
     params.metrics_file = program.get<std::string>("--metrics-file");
@@ -162,49 +155,35 @@ bool validateParameters(const ProgramParams& params) {
 }
 
 // Broadcast parameters to all processes
-void broadcastParameters(ProgramParams& params, int root = 0) {
-    MPI_Bcast(&params.num_players, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
-    MPI_Bcast(&params.total_iterations, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
-    MPI_Bcast(&params.entry_size, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
-    MPI_Bcast(&params.buffer_capacity, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
-    MPI_Bcast(&params.batch_size, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
-    MPI_Bcast(&params.learner_time, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
-    MPI_Bcast(&params.checkpoint_freq, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
-    MPI_Bcast(&params.num_agents, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
-    MPI_Bcast(&params.game_steps, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
-    MPI_Bcast(&params.agent_time, 1, MPI_UNSIGNED_LONG, root, MPI_COMM_WORLD);
-    MPI_Bcast(&params.seed, 1, MPI_UNSIGNED, root, MPI_COMM_WORLD);
+void broadcastParameters(ProgramParams& params, int world_rank) {
+    // Broadcast numerical parameters
+    MPI_Bcast(&params.num_players, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&params.total_iterations, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&params.entry_size, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&params.buffer_capacity, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&params.batch_size, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&params.learner_time, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&params.checkpoint_freq, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&params.game_steps, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&params.agent_time, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&params.seed, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
     
     // Broadcast strings
-    int loc_len = params.checkpoint_location.size() + 1;
-    MPI_Bcast(&loc_len, 1, MPI_INT, root, MPI_COMM_WORLD);
-    char* loc_buf = new char[loc_len];
-    if (MPI_Comm_rank(MPI_COMM_WORLD, nullptr) == root) {
-        strcpy(loc_buf, params.checkpoint_location.c_str());
-    }
-    MPI_Bcast(loc_buf, loc_len, MPI_CHAR, root, MPI_COMM_WORLD);
-    params.checkpoint_location = std::string(loc_buf);
-    delete[] loc_buf;
+    auto broadcast_string = [world_rank](std::string& str) {
+        size_t length = 0;
+        if (world_rank == 0) length = str.size();
+        MPI_Bcast(&length, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+        
+        char* buffer = new char[length + 1];
+        if (world_rank == 0) strcpy(buffer, str.c_str());
+        MPI_Bcast(buffer, length + 1, MPI_CHAR, 0, MPI_COMM_WORLD);
+        if (world_rank != 0) str = std::string(buffer);
+        delete[] buffer;
+    };
     
-    int model_len = params.starting_model.size() + 1;
-    MPI_Bcast(&model_len, 1, MPI_INT, root, MPI_COMM_WORLD);
-    char* model_buf = new char[model_len];
-    if (MPI_Comm_rank(MPI_COMM_WORLD, nullptr) == root) {
-        strcpy(model_buf, params.starting_model.c_str());
-    }
-    MPI_Bcast(model_buf, model_len, MPI_CHAR, root, MPI_COMM_WORLD);
-    params.starting_model = std::string(model_buf);
-    delete[] model_buf;
-    
-    int metrics_len = params.metrics_file.size() + 1;
-    MPI_Bcast(&metrics_len, 1, MPI_INT, root, MPI_COMM_WORLD);
-    char* metrics_buf = new char[metrics_len];
-    if (MPI_Comm_rank(MPI_COMM_WORLD, nullptr) == root) {
-        strcpy(metrics_buf, params.metrics_file.c_str());
-    }
-    MPI_Bcast(metrics_buf, metrics_len, MPI_CHAR, root, MPI_COMM_WORLD);
-    params.metrics_file = std::string(metrics_buf);
-    delete[] metrics_buf;
+    broadcast_string(params.checkpoint_location);
+    broadcast_string(params.starting_model);
+    broadcast_string(params.metrics_file);
 }
 
 int main(int argc, char** argv) {
@@ -217,7 +196,6 @@ int main(int argc, char** argv) {
     ProgramParams params;
     bool parse_success = true;
     
-    // Root process parses parameters
     if (world_rank == 0) {
         parse_success = parseParameters(argc, argv, params);
         if (parse_success) {
@@ -233,14 +211,24 @@ int main(int argc, char** argv) {
     }
 
     // Broadcast parameters to all processes
-    broadcastParameters(params, 0);
+    broadcastParameters(params, world_rank);
 
-    // Set random seed per agent
+    // Set random seed per process
     std::srand(params.seed + world_rank);
 
     // Initialize metrics
     auto metrics = MetricsTracker::getInstance();
     metrics->start();
+
+    // Generate metrics filename based on process type
+    std::string metrics_file = params.metrics_file;
+    if (!metrics_file.empty()) {
+        if (world_rank == 0) {
+            metrics_file += "_learner.csv";
+        } else {
+            metrics_file += "_agent_" + std::to_string(world_rank - 1) + ".csv";
+        }
+    }
 
     if (world_rank == 0) {
         // Learner process
@@ -253,7 +241,7 @@ int main(int argc, char** argv) {
             params.checkpoint_freq,
             params.checkpoint_location,
             params.starting_model,
-            world_size - 1,  // num_agents
+            world_size - 1,  // num_agents = world_size - 1
             params.total_iterations
         );
         learner.run();
@@ -270,10 +258,10 @@ int main(int argc, char** argv) {
         agent.run();
     }
 
-    // Finalize metrics and MPI
+    // Finalize metrics
     metrics->printMetricsSummary();
-    if (!params.metrics_file.empty() && world_rank == 0) {
-        metrics->saveMetricsToCSV(params.metrics_file);
+    if (!metrics_file.empty()) {
+        metrics->saveMetricsToCSV(metrics_file);
     }
     
     MPI_Finalize();

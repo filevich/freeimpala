@@ -103,7 +103,7 @@ private:
         // Sleep to simulate training time
         std::this_thread::sleep_for(std::chrono::milliseconds(train_time_ms));
         
-        // For the dummy implementation, create a new model with random data
+        // Create a new model with random data
         auto current_model = model_manager->getModel(player_index);
         auto new_model = current_model->createCopy();
         new_model->generateRandomData();
@@ -192,7 +192,26 @@ public:
         auto metrics = MetricsTracker::getInstance();
         metrics->start();
         
-        size_t total_batches = (num_agents * total_iterations * num_players) / batch_size;
+        // Calculate total batches needed (per player)
+        size_t total_batches_per_player = (num_agents * total_iterations) / batch_size;
+        size_t total_entries_per_player = num_agents * total_iterations;
+
+        // Calculate total batches needed
+        size_t total_batches = (num_agents * total_iterations + batch_size - 1) / batch_size;
+        
+        // Add warning if batches don't divide evenly
+        if (total_entries_per_player % batch_size != 0) {
+            std::cerr << "Warning: total entries per player (" << total_entries_per_player
+                      << ") not divisible by batch size (" << batch_size << ")"
+                      << ". Some data will not be processed." << std::endl;
+            total_batches_per_player++;  // Process partial batch
+        }
+        
+        std::cerr << "Learner starting. Total batches needed: " 
+              << total_batches << " per player" << std::endl;
+        
+        size_t processed_batches = 0;
+        bool all_done = false;
         
         while (!should_stop) {
             // Process incoming messages
@@ -202,10 +221,16 @@ public:
             bool trained = false;
             for (size_t p = 0; p < num_players; p++) {
                 std::lock_guard<std::mutex> lock(buffer_mutex);
+                size_t available = player_buffers[p].size();
+
                 if (player_buffers[p].size() >= batch_size && training_counts[p] < total_batches) {
+                    
+                    // Determine actual batch size for this training
+                    size_t actual_batch_size = std::min(batch_size, available);
+                    
                     // Form batch
                     std::vector<std::vector<char>> batch;
-                    for (size_t i = 0; i < batch_size; i++) {
+                    for (size_t i = 0; i < actual_batch_size; i++) {
                         batch.push_back(player_buffers[p].front());
                         player_buffers[p].pop();
                     }
@@ -213,17 +238,23 @@ public:
                     // Train model
                     trainModel(p);
                     training_counts[p]++;
+                    processed_batches++;
+                    trained = true;
+
+                    if (trained) {
+                        std::cerr << "Trained model for player " << p 
+                                << ". Total trained: " << training_counts[p]
+                                << "/" << total_batches << std::endl;
+                    }
                     
                     // Checkpoint if needed
                     if (checkpoint_frequency > 0 && training_counts[p] % checkpoint_frequency == 0) {
                         checkpointModel(p);
                     }
-                    
-                    trained = true;
                 }
             }
             
-            // Check if all training is complete
+            // Check termination condition
             bool all_done = true;
             for (size_t p = 0; p < num_players; p++) {
                 if (training_counts[p] < total_batches) {
@@ -231,12 +262,14 @@ public:
                     break;
                 }
             }
-            
+
             if (all_done) {
                 should_stop = true;
-                // Send termination signal to agents
+                // Send termination to agents
                 for (int i = 1; i <= num_agents; i++) {
-                    MPI_Send(nullptr, 0, MPI_BYTE, i, TERMINATE_TAG, MPI_COMM_WORLD);
+                    // Use non-blocking send to avoid deadlock
+                    MPI_Request request;
+                    MPI_Isend(nullptr, 0, MPI_BYTE, i, TERMINATE_TAG, MPI_COMM_WORLD, &request);
                 }
                 break;
             }
@@ -247,8 +280,15 @@ public:
             }
         }
         
+        // Send termination signal to agents
+        std::cerr << "Learner completed. Sending termination to " << num_agents << " agents." << std::endl;
+        for (int i = 1; i <= num_agents; i++) {
+            MPI_Send(nullptr, 0, MPI_BYTE, i, TERMINATE_TAG, MPI_COMM_WORLD);
+        }
+        
         // Save final model state
-        model_manager->saveAllModels(total_batches);
+        model_manager->saveAllModels(processed_batches);
+        std::cerr << "Learner saved final models." << std::endl;
     }
 };
 

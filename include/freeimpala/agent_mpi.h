@@ -156,9 +156,15 @@ public:
     void run() {
         auto metrics = MetricsTracker::getInstance();
         size_t iteration = 0;
+        bool running = true;
         
-        while (!should_stop && iteration < total_iterations) {
+        while (running && iteration < total_iterations) {
             metrics->startAgentIteration(agent_id);
+
+            if (iteration % 10 == 0) {
+                std::cerr << "Agent " << agent_id << ": Completed iteration " 
+                        << iteration << "/" << total_iterations << std::endl;
+            }
             
             // Step 1: Simulate the game
             simulateGame();
@@ -172,14 +178,19 @@ public:
             metrics->endAgentIteration(agent_id);
             iteration++;
             
-            // Check for termination signal
+            // Check for termination signal with timeout
             int flag;
-            MPI_Iprobe(0, TERMINATE_TAG, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE);
+            MPI_Status status;
+            MPI_Iprobe(0, TERMINATE_TAG, MPI_COMM_WORLD, &flag, &status);
             if (flag) {
-                should_stop = true;
-                // Consume the termination message
-                MPI_Recv(nullptr, 0, MPI_BYTE, 0, TERMINATE_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(nullptr, 0, MPI_BYTE, 0, TERMINATE_TAG, MPI_COMM_WORLD, &status);
+                running = false;
             }
+        }
+        
+        // If we finished iterations but haven't received termination, wait for it
+        if (running) {
+            MPI_Recv(nullptr, 0, MPI_BYTE, 0, TERMINATE_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
     }
 };

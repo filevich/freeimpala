@@ -1,6 +1,12 @@
 #ifndef DATA_STRUCTURES_MPI_H
 #define DATA_STRUCTURES_MPI_H
 
+// Define MPI tags here since they're shared between learner and agent
+#define DATA_TAG 1
+#define VERSION_REQUEST_TAG 2
+#define MODEL_REQUEST_TAG 3
+#define TERMINATE_TAG 4
+
 #include <iostream>
 #include <vector>
 #include <mutex>
@@ -14,13 +20,6 @@
 #include <string>
 #include <queue>
 #include <functional>
-#include <sstream>
-
-// MPI tags
-#define DATA_TAG 1
-#define VERSION_REQUEST_TAG 2
-#define MODEL_REQUEST_TAG 3
-#define TERMINATE_TAG 4
 
 // Size of each element in bytes
 constexpr size_t ELEMENT_SIZE = 1024;
@@ -115,7 +114,8 @@ private:
 public:
     ModelManager(size_t num_players, size_t model_size, const std::string& directory) 
         : models(num_players),
-          latest_versions(num_players) {
+          latest_versions(num_players),
+          model_directory(directory) {
         
         // Create models for each player
         for (size_t p = 0; p < num_players; p++) {
@@ -139,10 +139,6 @@ public:
                 // For this dummy version, we'll just generate new random data
                 models[p]->generateRandomData();
                 latest_versions[p].store(models[p]->getVersion());
-                
-                std::stringstream ss;
-                ss << "Loaded model " << p << " from disk, version: " << models[p]->getVersion() << std::endl;
-                std::cerr << ss.str();
             }
         }
     }
@@ -150,25 +146,37 @@ public:
     // Save a specific model to disk with versioned filename
     void saveModel(size_t player_index, uint64_t current_iteration = 0) {
         if (player_index >= models.size() || !models[player_index]) {
-            std::cerr << "Error: Invalid model index or null model: " << player_index << std::endl;
             return;
         }
         
-        // Create a deep copy of the model
-        std::shared_ptr<Model> model_copy = models[player_index]->createCopy();
-        if (!model_copy) {
-            std::cerr << "Error: Failed to create model copy for player " << player_index << std::endl;
-            return;
+        // Create directory if needed
+        if (!std::filesystem::exists(model_directory)) {
+            std::filesystem::create_directories(model_directory);
         }
         
-        // Create timestamped filename
-        std::string versioned_filepath = model_directory + "/model_" + std::to_string(player_index) + "_" + std::to_string(current_iteration) + ".bin";
+        // Create filename
+        std::string filename = "model_" + std::to_string(player_index) + 
+                               "_" + std::to_string(current_iteration) + ".bin";
+        std::string filepath = model_directory + "/" + filename;
         
-        // In a real implementation, we would save the model to disk
-        std::stringstream ss;
-        ss << "Saved checkpoint for player " << player_index << " at iteration " << current_iteration 
-                  << " to " << versioned_filepath << std::endl;
-        std::cerr << ss.str();
+        // Write model to file
+        std::ofstream file(filepath, std::ios::binary);
+        if (file) {
+            auto model = models[player_index];
+            uint64_t version = model->getVersion();
+            std::vector<char> data = model->getData();
+            
+            // Write version
+            file.write(reinterpret_cast<const char*>(&version), sizeof(version));
+            // Write data
+            file.write(data.data(), data.size());
+            
+            // Create latest symlink
+            std::string latest_filepath = model_directory + "/model_" + 
+                                         std::to_string(player_index) + "_latest.bin";
+            std::filesystem::remove(latest_filepath);
+            std::filesystem::create_symlink(filename, latest_filepath);
+        }
     }
     
     // Save all models to disk (for final checkpoints or manual saving)
