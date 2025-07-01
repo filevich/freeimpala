@@ -24,14 +24,14 @@ set_target_properties(freeimpala_mpi PROPERTIES
 target_link_libraries(freeimpala_mpi
     PRIVATE
     argparse
-    /opt/conda/lib/libmpi.so
+    MPI::MPI_CXX
 )
 
 # Include directories (including MPI headers)
 target_include_directories(freeimpala_mpi
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
-    /opt/conda/include
+    ${MPI_CXX_INCLUDE_DIRS}
 )
 
 # Install the MPI executable
