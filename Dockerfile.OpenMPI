@@ -34,25 +34,15 @@ ENV OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
 # Explicitly activate Conda environment
 RUN . /opt/conda/etc/profile.d/conda.sh && conda activate base
 
-# Download argparse header (since FetchContent may not work smoothly in Docker)
-RUN mkdir -p include/argparse && \
-    wget https://raw.githubusercontent.com/p-ranav/argparse/v2.9/include/argparse/argparse.hpp -O include/argparse/argparse.hpp
+RUN mkdir -p build && \
+    cd build && \
+    cmake -DCMAKE_CXX_COMPILER=mpicxx -DCMAKE_C_COMPILER=mpicc -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON .. && \
+    cmake --build . 
 
-# Build freeimpala with g++
-RUN mkdir -p build_vanilla && \
-    cd build_vanilla && \
-    cmake -DCMAKE_CXX_COMPILER=g++ -DCMAKE_VERBOSE_MAKEFILE=ON .. && \
-    cmake --build . && \
-    mkdir -p /app/build && \
-    cp freeimpala /app/build/
-
-# Build freeimpala_mpi with mpicxx and mpicc
-RUN mkdir -p build_mpi && \
-    cd build_mpi && \
-    cmake -DCMAKE_CXX_COMPILER=mpicxx -DCMAKE_C_COMPILER=mpicc -DCMAKE_VERBOSE_MAKEFILE=ON .. && \
-    cmake --build . && \
-    mkdir -p /app/build && \
-    cp freeimpala_mpi /app/build/
+RUN mkdir -p /opt/freeimpala/bin && \
+    mv /app/build/freeimpala /opt/freeimpala/bin/ && \
+    mv /app/build/freeimpala_mpi /opt/freeimpala/bin/ && \
+    rm -rf /app
 
 # Verify OpenMPI version
 RUN mpirun --version

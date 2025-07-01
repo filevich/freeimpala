@@ -23,6 +23,7 @@ set_target_properties(freeimpala_mpi PROPERTIES
 # Link the MPI library directly
 target_link_libraries(freeimpala_mpi
     PRIVATE
+    argparse
     /opt/conda/lib/libmpi.so
 )
 
