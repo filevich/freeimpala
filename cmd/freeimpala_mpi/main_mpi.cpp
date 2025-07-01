@@ -196,99 +196,24 @@ std::unique_ptr<Learner> setupLearner(const ProgramParams& params) {
     return learner;
 }
 
-// Setup and start agents
-std::vector<std::thread> setupAgents(
-    const ProgramParams& params, 
-    std::vector<std::shared_ptr<Agent>>& agents,
-    Learner& learner
-) {
-    std::stringstream ss;
-    ss << "Creating and starting " << params.num_agents << " agents..." << std::endl;
-    std::cerr << ss.str();
-    ss.str("");
-    ss.clear();
-
-    std::vector<std::thread> agent_threads;
-    auto shared_buffers = learner.getSharedBuffers();
-    auto model_manager = learner.getModelManager();
-
-    for (size_t a = 0; a < params.num_agents; a++) {
-        auto agent = std::make_shared<Agent>(
-            a,
-            params.num_players,
-            params.entry_size,
-            params.game_steps,
-            params.agent_time,
-            params.total_iterations,
-            shared_buffers,
-            model_manager
-        );
-        
-        agents.push_back(agent);
-        agent_threads.emplace_back([agent] { agent->run(); });
-    }
-
-    return agent_threads;
-}
-
-// Cleanup and finalize execution
-void cleanup(
-    const ProgramParams& params,
-    Learner& learner, 
-    std::vector<std::thread>& agent_threads
-) {
-    std::stringstream ss;
-    ss << "Waiting for agents to complete..." << std::endl;
-    std::cerr << ss.str();
-    ss.str("");
-    ss.clear();
-
-    for (auto& thread : agent_threads) {
-        thread.join();
-    }
-
-    ss << "Stopping learner..." << std::endl;
-    std::cerr << ss.str();
-    ss.str("");
-    ss.clear();
-    learner.stop();
-
-    auto metrics = MetricsTracker::getInstance();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    metrics->stop();
-    
-    metrics->printMetricsSummary();
-    
-    if (!params.metrics_file.empty()) {
-        metrics->saveMetricsToCSV(params.metrics_file);
-        ss << "Metrics saved to " << params.metrics_file << std::endl;
-        std::cerr << ss.str();
-        ss.str("");
-        ss.clear();
-    }
-
-    ss << "Execution completed successfully" << std::endl;
-    std::cerr << ss.str();
-}
-
 // utility
 inline std::size_t traj_bytes(const ProgramParams& p) {
     return p.entry_size * ELEMENT_SIZE;
 }
 
 // rank-0 (learner) thread
-void mpi_receiver(const ProgramParams& params,
-                  const std::vector<std::shared_ptr<SharedBuffer>>& buffers,
-                  std::atomic<int>& done_actors,
-                  int world_size)
-{
+void mpi_receiver(
+        const ProgramParams& params,
+        const std::vector<std::shared_ptr<SharedBuffer>>& buffers,
+        std::atomic<int>& done_actors,
+        int world_size
+) {
     while (done_actors.load() < world_size - 1) {
         MPI_Status st;
         MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &st);
 
         if (st.MPI_TAG == TAG_TERMINATE) {
-            MPI_Recv(nullptr, 0, MPI_CHAR, st.MPI_SOURCE,
-                     TAG_TERMINATE, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(nullptr, 0, MPI_CHAR, st.MPI_SOURCE, TAG_TERMINATE, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             done_actors.fetch_add(1);
             continue;
         }
@@ -298,16 +223,14 @@ void mpi_receiver(const ProgramParams& params,
         MPI_Get_count(&st, MPI_CHAR, &count);
 
         std::vector<char> data(count);
-        MPI_Recv(data.data(), count, MPI_CHAR, st.MPI_SOURCE,
-                 st.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(data.data(), count, MPI_CHAR, st.MPI_SOURCE, st.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
         // Write into the learner’s local shared buffer – blocks if full
         buffers[player_idx]->write(data);
     }
 }
 
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
     int provided;
     MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
     if (provided < MPI_THREAD_MULTIPLE) {
@@ -324,6 +247,9 @@ int main(int argc, char** argv)
         MPI_Finalize(); return 1;
     }
 
+    // override num_agents
+    params.num_agents = world_size - 1;
+
     // learner process
     if (rank == 0) {
         auto metrics = MetricsTracker::getInstance();
@@ -333,10 +259,13 @@ int main(int argc, char** argv)
         auto shared_buffers  = learner->getSharedBuffers();
 
         std::atomic<int> terminated{0};
-        std::thread rx(mpi_receiver, std::cref(params),
-                       std::cref(shared_buffers),
-                       std::ref(terminated),
-                       world_size);
+        std::thread rx(
+                        mpi_receiver,
+                        std::cref(params),
+                        std::cref(shared_buffers),
+                        std::ref(terminated),
+                        world_size
+                    );
 
         // learner’s worker threads already started by setupLearner()
         rx.join();               // wait until all actors have finished
@@ -353,14 +282,17 @@ int main(int argc, char** argv)
         // We pass dummy shared_buffers because the MPI send happens inside
         // Agent::transferThread (see next section).
         std::vector<std::shared_ptr<SharedBuffer>> dummy;
-        auto dummy_model_mgr =
-            std::make_shared<ModelManager>(params.num_players, 6*1024*1024,
-                                           params.checkpoint_location);
+        auto dummy_model_mgr = std::make_shared<ModelManager>(params.num_players, 6*1024*1024, params.checkpoint_location);
 
-        Agent agent(rank - 1, params.num_players,
-                    params.entry_size, params.game_steps,
-                    params.agent_time, params.total_iterations,
-                    dummy, dummy_model_mgr);
+        Agent agent(
+                    rank - 1,
+                    params.num_players,
+                    params.entry_size,
+                    params.game_steps,
+                    params.agent_time,
+                    params.total_iterations,
+                    dummy, dummy_model_mgr
+                );
 
         agent.run(); // same loop as before
 
