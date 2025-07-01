@@ -152,7 +152,6 @@ public:
         }
     }
     
-    // Run the agent
     void run() {
         auto metrics = MetricsTracker::getInstance();
         size_t iteration = 0;
@@ -185,13 +184,42 @@ public:
             if (flag) {
                 MPI_Recv(nullptr, 0, MPI_BYTE, 0, TERMINATE_TAG, MPI_COMM_WORLD, &status);
                 running = false;
+                std::cerr << "Agent " << agent_id << ": Received termination signal at iteration " 
+                        << iteration << std::endl;
             }
         }
         
         // If we finished iterations but haven't received termination, wait for it
-        if (running) {
-            MPI_Recv(nullptr, 0, MPI_BYTE, 0, TERMINATE_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        if (iteration >= total_iterations) {
+            std::cerr << "Agent " << agent_id << ": Completed all iterations. Waiting for termination signal..." << std::endl;
+            
+            // Use MPI_Probe with timeout to avoid hanging indefinitely
+            MPI_Status probe_status;
+            int flag = 0;
+            auto start_time = std::chrono::steady_clock::now();
+            
+            while (!flag) {
+                MPI_Iprobe(0, TERMINATE_TAG, MPI_COMM_WORLD, &flag, &probe_status);
+                
+                // Timeout after 5 seconds
+                auto current_time = std::chrono::steady_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time).count();
+                if (elapsed > 5) {
+                    std::cerr << "Agent " << agent_id << ": Timeout waiting for termination signal. Exiting." << std::endl;
+                    break;
+                }
+                
+                // Sleep to avoid busy waiting
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            
+            if (flag) {
+                MPI_Recv(nullptr, 0, MPI_BYTE, 0, TERMINATE_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                std::cerr << "Agent " << agent_id << ": Received termination signal after completing iterations" << std::endl;
+            }
         }
+        
+        std::cerr << "Agent " << agent_id << ": Exiting after " << iteration << " iterations" << std::endl;
     }
 };
 

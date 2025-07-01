@@ -263,7 +263,36 @@ int main(int argc, char** argv) {
     if (!metrics_file.empty()) {
         metrics->saveMetricsToCSV(metrics_file);
     }
-    
+
+    std::cerr << "Process " << world_rank << " reached MPI finalization" << std::endl;
+
+    // Use MPI_Ibarrier with timeout to prevent hanging
+    MPI_Request barrier_request;
+    MPI_Ibarrier(MPI_COMM_WORLD, &barrier_request);
+
+    int barrier_done = 0;
+    auto start_time = std::chrono::steady_clock::now();
+
+    while (!barrier_done) {
+        MPI_Test(&barrier_request, &barrier_done, MPI_STATUS_IGNORE);
+        
+        // Timeout after 5 seconds
+        auto current_time = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time).count();
+        if (elapsed > 5) {
+            std::cerr << "Process " << world_rank << ": Barrier timeout. Finalizing MPI." << std::endl;
+            break;
+        }
+        
+        // Sleep to avoid busy waiting
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    if (barrier_done) {
+        std::cerr << "Process " << world_rank << " passed barrier" << std::endl;
+    }
+
     MPI_Finalize();
+    std::cerr << "Process " << world_rank << " finalized MPI" << std::endl;
     return 0;
 }
