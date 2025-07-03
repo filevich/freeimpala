@@ -6,7 +6,7 @@
 #include "freeimpala/metrics_tracker.h"
 
 #ifdef USE_MPI
-    #include <mpi.h>
+#include <mpi.h>
 #endif
 
 class Agent {
@@ -82,22 +82,22 @@ private:
         auto& entry = local_buffers[player_index]->getEntry();
 
         if (entry.filled) {
-            #ifdef USE_MPI
-                const int tag = TAG_TRAJECTORY_BASE + static_cast<int>(player_index);
-                MPI_Send(entry.data.data(),                     // buffer
-                        entry.data.size(), MPI_CHAR,
-                        0, tag, MPI_COMM_WORLD);              // to learner (rank 0)
-                metrics->recordDataTransfer();                 // always count it
-            #else
-                bool success = shared_buffers[player_index]->write(entry.data);
-                if (success) {
-                    metrics->recordDataTransfer();
-                } else {
-                    std::cerr << "Agent " << agent_id
-                            << ": failed to write data for player "
-                            << player_index << '\n';
-                }
-            #endif
+#ifdef USE_MPI
+            // send buffer, to learner (rank 0)
+            const int tag = TAG_TRAJECTORY_BASE + static_cast<int>(player_index);
+            MPI_Send(entry.data.data(), entry.data.size(), MPI_CHAR, 0, tag, MPI_COMM_WORLD);
+            // count it (to metrics)
+            metrics->recordDataTransfer();
+#else
+            bool success = shared_buffers[player_index]->write(entry.data);
+            if (success) {
+                metrics->recordDataTransfer();
+            } else {
+                std::cerr << "Agent " << agent_id
+                        << ": failed to write data for player "
+                        << player_index << '\n';
+            }
+#endif
         }
         promise.set_value();
     }
