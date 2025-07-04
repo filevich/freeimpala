@@ -203,30 +203,66 @@ inline std::size_t traj_bytes(const ProgramParams& p) {
 
 // rank-0 (learner) thread
 void mpi_receiver(
-        const ProgramParams& params,
-        const std::vector<std::shared_ptr<SharedBuffer>>& buffers,
-        std::atomic<int>& done_actors,
-        int world_size
+    const ProgramParams& params,
+    const std::vector<std::shared_ptr<SharedBuffer>>& buffers,
+    std::atomic<int>& done_actors,
+    int world_size,
+    const std::shared_ptr<ModelManager>& models
 ) {
     while (done_actors.load() < world_size - 1) {
         MPI_Status st;
         MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &st);
 
-        if (st.MPI_TAG == TAG_TERMINATE) {
-            MPI_Recv(nullptr, 0, MPI_CHAR, st.MPI_SOURCE, TAG_TERMINATE, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            done_actors.fetch_add(1);
-            continue;
+        switch (st.MPI_TAG) {
+        case TAG_VERSION_REQ: {
+                uint32_t p;
+                MPI_Recv(&p, 1, MPI_UNSIGNED, st.MPI_SOURCE, TAG_VERSION_REQ, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                uint32_t v = models->getLatestVersion(p);
+                MPI_Send(&v, 1, MPI_UNSIGNED, st.MPI_SOURCE, TAG_VERSION_RES, MPI_COMM_WORLD);
+                break;
+            }
+
+        case TAG_WEIGHTS_REQ: {
+                uint32_t p;
+                MPI_Recv(&p, 1, MPI_UNSIGNED, st.MPI_SOURCE, TAG_WEIGHTS_REQ, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                auto modelCopy = models->getModel(p)->createCopy();
+
+                /* pack version + bytes */
+                uint32_t v = modelCopy->getVersion();
+                auto sz = modelCopy->getData().size();
+                std::vector<uint8_t> out(sizeof(uint32_t) + sz);
+                std::memcpy(out.data(), &v, sizeof(uint32_t));
+                std::memcpy(out.data()+sizeof(uint32_t), modelCopy->getData().data(), sz);
+
+                MPI_Send(out.data(), out.size(), MPI_BYTE, st.MPI_SOURCE, TAG_WEIGHTS_RES, MPI_COMM_WORLD);
+                break;
+            }
+
+        case TAG_TERMINATE: {
+                MPI_Recv(nullptr, 0, MPI_CHAR, st.MPI_SOURCE, TAG_TERMINATE, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                done_actors.fetch_add(1);
+                break;
+            }
+
+        default: {
+                // it's a `TAG_TRAJECTORY`
+                // we need to "extract" the `player_idx` from the tag as follows
+                int player_idx = st.MPI_TAG - TAG_TRAJECTORY_BASE;
+                
+                // Get the message size
+                int count = 0;
+                MPI_Get_count(&st, MPI_CHAR, &count);
+
+                std::vector<char> data(count);
+                MPI_Recv(data.data(), count, MPI_CHAR, st.MPI_SOURCE, st.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                // Write into the learner’s local shared buffer – blocks if full
+                buffers[player_idx]->write(data);
+                break;
+            }
         }
-
-        int player_idx = st.MPI_TAG - TAG_TRAJECTORY_BASE;
-        int count      = 0;
-        MPI_Get_count(&st, MPI_CHAR, &count);
-
-        std::vector<char> data(count);
-        MPI_Recv(data.data(), count, MPI_CHAR, st.MPI_SOURCE, st.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-        // Write into the learner’s local shared buffer – blocks if full
-        buffers[player_idx]->write(data);
     }
 }
 
@@ -259,12 +295,15 @@ int main(int argc, char** argv) {
         auto shared_buffers  = learner->getSharedBuffers();
 
         std::atomic<int> terminated{0};
+
+        // `tx` is for "transmit" (send); `rx` is for "receive"
         std::thread rx(
                         mpi_receiver,
                         std::cref(params),
                         std::cref(shared_buffers),
                         std::ref(terminated),
-                        world_size
+                        world_size,
+                        learner->getModelManager()
                     );
 
         // learner’s worker threads already started by setupLearner()

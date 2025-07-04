@@ -19,11 +19,17 @@
 #include <functional>
 
 enum : int {
-    TAG_TRAJECTORY_BASE = 100,   // TAG_TRAJECTORY_BASE + player_idx
-    TAG_MODEL_UPDATE    = 200,    // optional – not wired yet
+    /* -------- actor -> learner -------- */
+    TAG_TRAJECTORY_BASE = 100,   // +player_idx
+    TAG_VERSION_REQ     = 200,   // payload: uint32_t player_idx
+    TAG_WEIGHTS_REQ     = 210,   // payload: uint32_t player_idx
+
+    /* -------- actor <- learner -------- */
+    TAG_VERSION_RES     = 201,   // payload: uint32_t latest_version
+    TAG_WEIGHTS_RES     = 211,   // payload: uint32_t latest_version  +  weights[]
+
     TAG_TERMINATE       = 999
 };
-
 
 // Size of each element in bytes
 constexpr size_t ELEMENT_SIZE = 1024;

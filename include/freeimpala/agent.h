@@ -106,7 +106,43 @@ private:
     void modelUpdateThread(size_t player_index, std::promise<void>& promise) {
         auto metrics = MetricsTracker::getInstance();
         auto timer = metrics->createSyncTimer();
-        
+
+#ifdef USE_MPI
+        uint32_t p32 = static_cast<uint32_t>(player_index);
+        MPI_Send(&p32, 1, MPI_UNSIGNED, 0, TAG_VERSION_REQ, MPI_COMM_WORLD);
+
+        // Wait for the learner’s answer (blocking)
+        uint32_t latest;
+        MPI_Recv(&latest, 1, MPI_UNSIGNED, 0, TAG_VERSION_RES, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        if (latest > current_model_versions[player_index]) {
+            // Request the weights for that player
+            MPI_Send(&p32, 1, MPI_UNSIGNED, 0, TAG_WEIGHTS_REQ, MPI_COMM_WORLD);
+
+            // Get the data size
+            const size_t data_size = local_models[player_index]->getData().size();
+            const size_t total_size = sizeof(uint32_t) + data_size;
+
+            // Create a buffer to hold version + data
+            std::vector<uint8_t> buffer(total_size);
+
+            // Receive the data
+            MPI_Recv(buffer.data(), total_size, MPI_BYTE, 0, TAG_WEIGHTS_RES, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            // Extract version (be careful about endianness if needed)
+            uint32_t version;
+            std::memcpy(&version, buffer.data(), sizeof(uint32_t));
+
+            // Extract data and convert to std::vector<char>
+            std::vector<char> new_data(buffer.begin() + sizeof(uint32_t), buffer.end());
+
+            // Call update function
+            local_models[player_index]->update(new_data);
+
+            current_model_versions[player_index] = version;
+            metrics->recordAgentModelSync();
+        }
+#else
         // Check if there's a new model available
         uint64_t current_version = current_model_versions[player_index];
         uint64_t latest_version = model_manager->getLatestVersion(player_index);
@@ -139,7 +175,7 @@ private:
                 metrics->recordAgentModelSync();
             }
         }
-        
+#endif        
         promise.set_value();
     }
 
