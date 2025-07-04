@@ -219,7 +219,11 @@ void mpi_receiver(
                 MPI_Recv(&p, 1, MPI_UNSIGNED, st.MPI_SOURCE, TAG_VERSION_REQ, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
                 uint32_t v = models->getLatestVersion(p);
-                MPI_Send(&v, 1, MPI_UNSIGNED, st.MPI_SOURCE, TAG_VERSION_RES, MPI_COMM_WORLD);
+                if (MPI_Send(&v, 1, MPI_UNSIGNED, st.MPI_SOURCE, TAG_VERSION_RES, MPI_COMM_WORLD) != MPI_SUCCESS) {
+                    std::stringstream ss;
+                    ss << "Error: Failed to send version response to rank " << st.MPI_SOURCE << " for player " << p << std::endl;
+                    std::cerr << ss.str();
+                }
                 break;
             }
 
@@ -236,7 +240,11 @@ void mpi_receiver(
                 std::memcpy(out.data(), &v, sizeof(uint32_t));
                 std::memcpy(out.data()+sizeof(uint32_t), modelCopy->getData().data(), sz);
 
-                MPI_Send(out.data(), out.size(), MPI_BYTE, st.MPI_SOURCE, TAG_WEIGHTS_RES, MPI_COMM_WORLD);
+                if (MPI_Send(out.data(), out.size(), MPI_BYTE, st.MPI_SOURCE, TAG_WEIGHTS_RES, MPI_COMM_WORLD) != MPI_SUCCESS) {
+                    std::stringstream ss;
+                    ss << "Error: Failed to send weights response to rank " << st.MPI_SOURCE << " for player " << p << std::endl;
+                    std::cerr << ss.str();
+                }
                 break;
             }
 
@@ -336,7 +344,11 @@ int main(int argc, char** argv) {
         agent.run(); // same loop as before
 
         // Tell learner we are done
-        MPI_Send(nullptr, 0, MPI_CHAR, 0, TAG_TERMINATE, MPI_COMM_WORLD);
+        if (MPI_Send(nullptr, 0, MPI_CHAR, 0, TAG_TERMINATE, MPI_COMM_WORLD) != MPI_SUCCESS) {
+            std::stringstream ss;
+            ss << "Error: Failed to send TAG_TERMINATE message to learner from rank " << rank << std::endl;
+            std::cerr << ss.str();
+        }
     }
 
     MPI_Finalize();
