@@ -145,16 +145,15 @@ private:
             MPI_Recv(buffer.data(), total_size, MPI_BYTE, 0, TAG_WEIGHTS_RES, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
             // Extract version (be careful about endianness if needed)
-            uint32_t version;
-            std::memcpy(&version, buffer.data(), sizeof(uint32_t));
+            uint32_t new_version;
+            std::memcpy(&new_version, buffer.data(), sizeof(uint32_t));
 
             // Extract data and convert to std::vector<char>
             std::vector<char> new_data(buffer.begin() + sizeof(uint32_t), buffer.end());
 
             // Call update function
-            local_models[player_index]->update(new_data);
-
-            current_model_versions[player_index] = version;
+            local_models[player_index]->update(new_data, new_version);
+            current_model_versions[player_index] = new_version;
             metrics->recordAgentModelSync();
         }
 #else

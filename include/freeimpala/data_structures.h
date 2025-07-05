@@ -137,12 +137,12 @@ public:
         return data;
     }
 
-    // Update model with new data and increment version
-    void update(const std::vector<char>& new_data) {
+    // Update model with new data and optionally set version
+    void update(const std::vector<char>& new_data, std::optional<uint64_t> new_version = std::nullopt) {
         std::lock_guard<std::mutex> lock(model_mutex);
         if (new_data.size() == data.size()) {
             data = new_data;
-            version++;
+            version = new_version.has_value() ? *new_version : version + 1;
         }
     }
 
