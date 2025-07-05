@@ -198,6 +198,8 @@ private:
     size_t read_index;
     size_t count;
     size_t capacity;
+    // fix:
+    std::atomic<bool> draining_{false};
 
 public:
     SharedBuffer(size_t entry_size, size_t buffer_capacity) 
@@ -206,6 +208,12 @@ public:
           read_index(0),
           count(0),
           capacity(buffer_capacity) {}
+
+    void setDraining() {
+        draining_ = true;
+        not_empty.notify_all(); // Wake up waiting readers
+        not_full.notify_all();  // wake any blocked writers
+    }
 
     // Write data to the buffer (used by Agents) - blocking version
     bool write(const std::vector<char>& data) {
@@ -258,9 +266,18 @@ public:
     // Read multiple entries from the buffer (used by Learner)
     std::vector<std::vector<char>> readBatch(size_t batch_size) {
         std::unique_lock<std::mutex> lock(buffer_mutex);
-        
-        // Wait until we have enough entries
-        not_empty.wait(lock, [this, batch_size] { return count >= batch_size; });
+
+        // Wait until: 
+        //   a) full batch is available (i.e., we have enough entries) OR 
+        //   b) (fix) we're draining and should exit
+        not_empty.wait(lock, [this, batch_size] { 
+            return count >= batch_size || draining_.load(); 
+        });
+
+        // drop if BOTH draining AND incomplete
+        if (draining_.load() && count < batch_size) {
+            return {};  // Return empty batch during drain
+        }
         
         std::vector<std::vector<char>> batch;
         batch.reserve(batch_size);

@@ -75,12 +75,19 @@ private:
         while (!should_stop.load() && iteration_count < total_iterations) {
             // Wait for enough data in the buffer
             auto batch = shared_buffers[player_index]->readBatch(batch_size);
+
+            if (batch.empty()) { // either draining & <batch_size OR fake
+                if (should_stop.load())
+                    break; // graceful exit
+                else
+                    continue; // fake, wake-up, loop again
+            }
             
             // Train the model with the batch
             trainModel(player_index, batch);
             
             // Increment the iteration counter
-            iteration_count++;
+            ++iteration_count;
             
             // Checkpoint if needed - now each thread only saves its own model
             if (checkpoint_frequency > 0 && iteration_count % checkpoint_frequency == 0) {
@@ -158,6 +165,11 @@ public:
     // Stop the learner
     void stop() {
         should_stop.store(true);
+
+        // fix: Signal buffers to drain
+        for (auto& buffer : shared_buffers) {
+            buffer->setDraining();
+        }
         
         // Wait for all worker threads to finish
         for (auto& thread : worker_threads) {

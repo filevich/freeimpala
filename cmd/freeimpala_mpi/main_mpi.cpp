@@ -267,6 +267,11 @@ void mpi_receiver(
             }
         }
     }
+
+    // Signal buffers to drain after processing last messages
+    for (auto& buffer : buffers) {
+        buffer->setDraining();
+    }
 }
 
 int main(int argc, char** argv) {
