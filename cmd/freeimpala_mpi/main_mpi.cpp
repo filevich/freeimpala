@@ -196,11 +196,6 @@ std::unique_ptr<Learner> setupLearner(const ProgramParams& params) {
     return learner;
 }
 
-// utility
-inline std::size_t traj_bytes(const ProgramParams& p) {
-    return p.entry_size * ELEMENT_SIZE;
-}
-
 // rank-0 (learner) thread
 void mpi_receiver(
     const ProgramParams& params,
