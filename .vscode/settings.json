@@ -66,5 +66,6 @@
         "chrono": "cpp"
     },
     "cmake.sourceDirectory": "/Users/jp/Workspace/facu/2025/hpc/experiments/dmc",
-    "C_Cpp.default.compilerPath": "/usr/bin/g++"
+    "C_Cpp.default.compilerPath": "/usr/bin/g++",
+    "C_Cpp.default.defines": ["USE_MPI"]
 }
