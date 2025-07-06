@@ -25,8 +25,8 @@ enum : int {
     TAG_WEIGHTS_REQ     = 210,   // payload: uint32_t player_idx
 
     /* -------- actor <- learner -------- */
-    TAG_VERSION_RES     = 201,   // payload: uint32_t latest_version
-    TAG_WEIGHTS_RES     = 211,   // payload: uint32_t latest_version  +  weights[]
+    TAG_VERSION_RES     = 201,   // payload: uint64_t latest_version
+    TAG_WEIGHTS_RES     = 211,   // payload: uint64_t latest_version  +  [byte] weights
 
     TAG_TERMINATE       = 999
 };

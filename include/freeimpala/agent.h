@@ -122,10 +122,10 @@ private:
         }
 
         // Wait for the learner’s answer (blocking)
-        uint32_t latest;
-        MPI_Recv(&latest, 1, MPI_UNSIGNED, 0, TAG_VERSION_RES, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        uint64_t latest_version;
+        MPI_Recv(&latest_version, 1, MPI_UNSIGNED_LONG_LONG, 0, TAG_VERSION_RES, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        if (latest > current_model_versions[player_index]) {
+        if (latest_version > current_model_versions[player_index]) {
             // Request the weights for that player
             if (MPI_Send(&p32, 1, MPI_UNSIGNED, 0, TAG_WEIGHTS_REQ, MPI_COMM_WORLD) != MPI_SUCCESS) {
                 std::stringstream ss;
@@ -135,8 +135,8 @@ private:
             }
 
             // Get the data size
-            const size_t data_size = local_models[player_index]->getData().size();
-            const size_t total_size = sizeof(uint32_t) + data_size;
+            const size_t model_size = local_models[player_index]->getData().size();
+            const size_t total_size = sizeof(uint64_t) + model_size;
 
             // Create a buffer to hold version + data
             std::vector<uint8_t> buffer(total_size);
@@ -144,12 +144,12 @@ private:
             // Receive the data
             MPI_Recv(buffer.data(), total_size, MPI_BYTE, 0, TAG_WEIGHTS_RES, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-            // Extract version (be careful about endianness if needed)
-            uint32_t new_version;
-            std::memcpy(&new_version, buffer.data(), sizeof(uint32_t));
+            // Extract version (remember: careful about endianness when mixing x86_64/amd64 with arm/powerpc)
+            uint64_t new_version;
+            std::memcpy(&new_version, buffer.data(), sizeof(uint64_t));
 
             // Extract data and convert to std::vector<char>
-            std::vector<char> new_data(buffer.begin() + sizeof(uint32_t), buffer.end());
+            std::vector<char> new_data(buffer.begin() + sizeof(uint64_t), buffer.end());
 
             // Call update function
             local_models[player_index]->update(new_data, new_version);

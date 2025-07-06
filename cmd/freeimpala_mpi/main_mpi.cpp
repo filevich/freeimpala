@@ -210,34 +210,34 @@ void mpi_receiver(
 
         switch (st.MPI_TAG) {
         case TAG_VERSION_REQ: {
-                uint32_t p;
-                MPI_Recv(&p, 1, MPI_UNSIGNED, st.MPI_SOURCE, TAG_VERSION_REQ, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                uint32_t player_index;
+                MPI_Recv(&player_index, 1, MPI_UNSIGNED, st.MPI_SOURCE, TAG_VERSION_REQ, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-                uint32_t v = models->getLatestVersion(p);
-                if (MPI_Send(&v, 1, MPI_UNSIGNED, st.MPI_SOURCE, TAG_VERSION_RES, MPI_COMM_WORLD) != MPI_SUCCESS) {
+                uint64_t version = models->getLatestVersion(player_index);
+                if (MPI_Send(&version, 1, MPI_UNSIGNED_LONG_LONG, st.MPI_SOURCE, TAG_VERSION_RES, MPI_COMM_WORLD) != MPI_SUCCESS) {
                     std::stringstream ss;
-                    ss << "Error: Failed to send version response to rank " << st.MPI_SOURCE << " for player " << p << std::endl;
+                    ss << "Error: Failed to send version response to rank " << st.MPI_SOURCE << " for player " << player_index << std::endl;
                     std::cerr << ss.str();
                 }
                 break;
             }
 
         case TAG_WEIGHTS_REQ: {
-                uint32_t p;
-                MPI_Recv(&p, 1, MPI_UNSIGNED, st.MPI_SOURCE, TAG_WEIGHTS_REQ, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                uint32_t player_index;
+                MPI_Recv(&player_index, 1, MPI_UNSIGNED, st.MPI_SOURCE, TAG_WEIGHTS_REQ, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-                auto modelCopy = models->getModel(p)->createCopy();
+                auto model_copy = models->getModel(player_index)->createCopy();
 
                 /* pack version + bytes */
-                uint32_t v = modelCopy->getVersion();
-                auto sz = modelCopy->getData().size();
-                std::vector<uint8_t> out(sizeof(uint32_t) + sz);
-                std::memcpy(out.data(), &v, sizeof(uint32_t));
-                std::memcpy(out.data()+sizeof(uint32_t), modelCopy->getData().data(), sz);
+                uint64_t latest_version = model_copy->getVersion();
+                auto model_size = model_copy->getData().size();
+                std::vector<uint8_t> out(sizeof(uint64_t) + model_size);
+                std::memcpy(out.data(), &latest_version, sizeof(uint64_t));
+                std::memcpy(out.data()+sizeof(uint64_t), model_copy->getData().data(), model_size);
 
                 if (MPI_Send(out.data(), out.size(), MPI_BYTE, st.MPI_SOURCE, TAG_WEIGHTS_RES, MPI_COMM_WORLD) != MPI_SUCCESS) {
                     std::stringstream ss;
-                    ss << "Error: Failed to send weights response to rank " << st.MPI_SOURCE << " for player " << p << std::endl;
+                    ss << "Error: Failed to send weights response to rank " << st.MPI_SOURCE << " for player " << player_index << std::endl;
                     std::cerr << ss.str();
                 }
                 break;
