@@ -10,6 +10,9 @@
 #include "freeimpala/learner.h"
 #include "freeimpala/agent.h"
 #include <mpi.h>
+#include <atomic>
+#include <cstdint>
+#include <cstring>
 
 // Structure to hold all command-line parameters
 struct ProgramParams {
@@ -197,81 +200,98 @@ std::unique_ptr<Learner> setupLearner(const ProgramParams& params) {
 }
 
 // rank-0 (learner) thread
-void mpi_receiver(
-    const ProgramParams& params,
-    const std::vector<std::shared_ptr<SharedBuffer>>& buffers,
-    std::atomic<int>& done_actors,
-    int world_size,
-    const std::shared_ptr<ModelManager>& models
-) {
-    while (done_actors.load() < world_size - 1) {
-        MPI_Status st;
-        MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &st);
+void mpi_receiver_posted(
+        const ProgramParams& params,
+        const std::vector<std::shared_ptr<SharedBuffer>>& buffers,
+        std::atomic<int>& done_actors,
+        int   world_size,
+        const std::shared_ptr<ModelManager>& models,
+        std::size_t max_traj_bytes)
+{
+    constexpr int NUM_SLOTS = 64;
+    const std::size_t MAX_MSG_BYTES =
+        std::max<std::size_t>(max_traj_bytes,
+                              sizeof(uint64_t) + models->getModel(0)->getData().size());
 
-        switch (st.MPI_TAG) {
+    std::vector<std::vector<char>> bufs(NUM_SLOTS,
+                                        std::vector<char>(MAX_MSG_BYTES));
+    std::vector<MPI_Request> reqs(NUM_SLOTS);
+    std::vector<MPI_Status>  stats(NUM_SLOTS);   // optional bookkeeping
+
+    /* initial Irecvs */
+    for (int i = 0; i < NUM_SLOTS; ++i)
+        MPI_Irecv(bufs[i].data(), bufs[i].size(), MPI_BYTE,
+                  MPI_ANY_SOURCE, MPI_ANY_TAG,
+                  MPI_COMM_WORLD, &reqs[i]);
+
+    while (done_actors.load(std::memory_order_relaxed) < world_size - 1)
+    {
+        int idx;
+        MPI_Status st;                                  // <-- local status
+        MPI_Waitany(NUM_SLOTS, reqs.data(), &idx, &st);
+        if (idx == MPI_UNDEFINED) continue;             // safety
+
+        stats[idx] = st;                                // keep a copy (optional)
+
+        const int tag = st.MPI_TAG;
+        const int src = st.MPI_SOURCE;
+        int       nbyt = 0;
+        MPI_Get_count(&st, MPI_BYTE, &nbyt);
+        auto&     buf  = bufs[idx];
+
+        switch (tag)
+        {
         case TAG_VERSION_REQ: {
-                uint32_t player_index;
-                MPI_Recv(&player_index, 1, MPI_UNSIGNED, st.MPI_SOURCE, TAG_VERSION_REQ, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            uint32_t player;
+            std::memcpy(&player, buf.data(), sizeof(player));
 
-                uint64_t version = models->getLatestVersion(player_index);
-                if (MPI_Send(&version, 1, MPI_UNSIGNED_LONG_LONG, st.MPI_SOURCE, TAG_VERSION_RES, MPI_COMM_WORLD) != MPI_SUCCESS) {
-                    std::stringstream ss;
-                    ss << "Error: Failed to send version response to rank " << st.MPI_SOURCE << " for player " << player_index << std::endl;
-                    std::cerr << ss.str();
-                }
-                break;
-            }
+            uint64_t ver = models->getLatestVersion(player);
+            if (MPI_Send(&ver, 1, MPI_UNSIGNED_LONG_LONG, src,
+                         TAG_VERSION_RES, MPI_COMM_WORLD) != MPI_SUCCESS)
+                std::cerr << "MPI_Send(version_res) failed\n";
+            break;
+        }
 
         case TAG_WEIGHTS_REQ: {
-                uint32_t player_index;
-                MPI_Recv(&player_index, 1, MPI_UNSIGNED, st.MPI_SOURCE, TAG_WEIGHTS_REQ, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            uint32_t player;
+            std::memcpy(&player, buf.data(), sizeof(player));
 
-                auto model_copy = models->getModel(player_index)->createCopy();
+            auto model_copy = models->getModel(player)->createCopy();
+            uint64_t ver    = model_copy->getVersion();
+            const auto& w   = model_copy->getData();
 
-                /* pack version + bytes */
-                uint64_t latest_version = model_copy->getVersion();
-                auto model_size = model_copy->getData().size();
-                std::vector<uint8_t> out(sizeof(uint64_t) + model_size);
-                std::memcpy(out.data(), &latest_version, sizeof(uint64_t));
-                std::memcpy(out.data()+sizeof(uint64_t), model_copy->getData().data(), model_size);
+            std::vector<uint8_t> out(sizeof(uint64_t) + w.size());
+            std::memcpy(out.data(), &ver, sizeof(uint64_t));
+            std::memcpy(out.data() + sizeof(uint64_t), w.data(), w.size());
 
-                if (MPI_Send(out.data(), out.size(), MPI_BYTE, st.MPI_SOURCE, TAG_WEIGHTS_RES, MPI_COMM_WORLD) != MPI_SUCCESS) {
-                    std::stringstream ss;
-                    ss << "Error: Failed to send weights response to rank " << st.MPI_SOURCE << " for player " << player_index << std::endl;
-                    std::cerr << ss.str();
-                }
-                break;
-            }
-
-        case TAG_TERMINATE: {
-                MPI_Recv(nullptr, 0, MPI_CHAR, st.MPI_SOURCE, TAG_TERMINATE, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                done_actors.fetch_add(1);
-                break;
-            }
-
-        default: {
-                // it's a `TAG_TRAJECTORY`
-                // we need to "extract" the `player_idx` from the tag as follows
-                int player_idx = st.MPI_TAG - TAG_TRAJECTORY_BASE;
-                
-                // Get the message size
-                int count = 0;
-                MPI_Get_count(&st, MPI_CHAR, &count);
-
-                std::vector<char> data(count);
-                MPI_Recv(data.data(), count, MPI_CHAR, st.MPI_SOURCE, st.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-                // Write into the learner’s local shared buffer – blocks if full
-                buffers[player_idx]->write(data);
-                break;
-            }
+            if (MPI_Send(out.data(), out.size(), MPI_BYTE, src,
+                         TAG_WEIGHTS_RES, MPI_COMM_WORLD) != MPI_SUCCESS)
+                std::cerr << "MPI_Send(weights_res) failed\n";
+            break;
         }
+
+        case TAG_TERMINATE:
+            done_actors.fetch_add(1, std::memory_order_relaxed);
+            break;
+
+        default:
+            if (tag >= TAG_TRAJECTORY_BASE) {
+                int player = tag - TAG_TRAJECTORY_BASE;
+                std::vector<char> traj(buf.begin(), buf.begin() + nbyt);
+                buffers[player]->write(std::move(traj));
+            } else {
+                std::cerr << "Unexpected tag " << tag << '\n';
+            }
+            break;
+        }
+
+        /* repost slot */
+        MPI_Irecv(buf.data(), buf.size(), MPI_BYTE,
+                  MPI_ANY_SOURCE, MPI_ANY_TAG,
+                  MPI_COMM_WORLD, &reqs[idx]);
     }
 
-    // Signal buffers to drain after processing last messages
-    for (auto& buffer : buffers) {
-        buffer->setDraining();
-    }
+    for (auto& b : buffers) b->setDraining();
 }
 
 int main(int argc, char** argv) {
@@ -304,18 +324,22 @@ int main(int argc, char** argv) {
 
         std::atomic<int> terminated{0};
 
+        std::size_t max_traj_bytes = params.entry_size * ELEMENT_SIZE;
+
         // `tx` is for "transmit" (send); `rx` is for "receive"
         std::thread rx(
-                        mpi_receiver,
+                        mpi_receiver_posted,
                         std::cref(params),
                         std::cref(shared_buffers),
                         std::ref(terminated),
                         world_size,
-                        learner->getModelManager()
+                        learner->getModelManager(),
+                        max_traj_bytes
                     );
 
         // learner’s worker threads already started by setupLearner()
         rx.join();               // wait until all actors have finished
+
         learner->stop();
         metrics->stop();
         metrics->printMetricsSummary();
