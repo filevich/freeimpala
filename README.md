@@ -1,6 +1,8 @@
 
 ## Run
 
+### Threaded version
+
 ```sh
 ./build/freeimpala \
     --players 1 \
@@ -11,6 +13,23 @@
     --agents 4 \
     --agent-time 1000
 ```
+
+### MPI version
+
+```sh
+mpirun -n 5 \
+    ./build/freeimpala_mpi \
+    --players 2 \
+    --iterations 320 \
+    --buffer-capacity 32 \
+    --batch-size 32 \
+    --learner-time 100 \
+    --agent-time 100 \
+    --seed 42
+```
+
+Notice that there are no `--agents` flags in the MPI version. In this version 
+the number of agents is automatically derived as `n - 1`.
 
 ## GPU bench
 
