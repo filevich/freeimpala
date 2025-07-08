@@ -15,10 +15,18 @@
 ## GPU bench
 
 ```sh
-python benchmark.py --batch-size 64 --seq-length 100 --learning-rate 0.0005 --loss-function mse --optimizer adam --runs 10 --no-save --gpu cuda
+python benchmark.py \
+    --batch-size 64 \
+    --seq-length 100 \
+    --learning-rate 0.0005 \
+    --loss-function mse \
+    --optimizer adam \
+    --runs 10 \
+    --no-save \
+    --gpu cuda
 ```
 
-or `--gpu mps`
+for `--gpu` use `mps`, `cpu`, `cuda` or `auto`
 
 
 ## Docker + Singularity cluster
