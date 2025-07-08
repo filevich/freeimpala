@@ -20,13 +20,13 @@
 
 enum : int {
     /* -------- actor -> learner -------- */
-    TAG_TRAJECTORY_BASE = 100,   // +player_idx
-    TAG_VERSION_REQ     = 200,   // payload: uint32_t player_idx
-    TAG_WEIGHTS_REQ     = 210,   // payload: uint32_t player_idx
+    TAG_TRAJECTORY_BASE = 100, // +player_idx, payload: [byte] buffer
+    TAG_VERSION_REQ     = 200, // payload: uint32_t player_idx
+    TAG_WEIGHTS_REQ     = 210, // payload: uint32_t player_idx
 
     /* -------- actor <- learner -------- */
-    TAG_VERSION_RES     = 201,   // payload: uint64_t latest_version
-    TAG_WEIGHTS_RES     = 211,   // payload: uint64_t latest_version  +  [byte] weights
+    TAG_VERSION_RES     = 201, // payload: uint64_t latest_version
+    TAG_WEIGHTS_RES     = 211, // payload: uint64_t latest_version  +  [byte] weights
 
     TAG_TERMINATE       = 999
 };

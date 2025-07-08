@@ -201,40 +201,46 @@ std::unique_ptr<Learner> setupLearner(const ProgramParams& params) {
 
 // rank-0 (learner) thread
 void mpi_receiver_posted(
-        const ProgramParams& params,
-        const std::vector<std::shared_ptr<SharedBuffer>>& buffers,
-        std::atomic<int>& done_actors,
-        int   world_size,
-        const std::shared_ptr<ModelManager>& models,
-        std::size_t max_traj_bytes)
-{
+    const ProgramParams& params,
+    const std::vector<std::shared_ptr<SharedBuffer>>& buffers,
+    std::atomic<int>& done_actors,
+    int world_size,
+    const std::shared_ptr<ModelManager>& models,
+    std::size_t max_traj_bytes
+) {
     constexpr int NUM_SLOTS = 64;
-    const std::size_t MAX_MSG_BYTES =
-        std::max<std::size_t>(max_traj_bytes,
-                              sizeof(uint64_t) + models->getModel(0)->getData().size());
+    const std::size_t MAX_MSG_BYTES = std::max<std::size_t>(
+        max_traj_bytes,
+        sizeof(uint64_t) + models->getModel(0)->getData().size()
+    );
 
-    std::vector<std::vector<char>> bufs(NUM_SLOTS,
-                                        std::vector<char>(MAX_MSG_BYTES));
+    std::vector<std::vector<char>> bufs(NUM_SLOTS, std::vector<char>(MAX_MSG_BYTES));
     std::vector<MPI_Request> reqs(NUM_SLOTS);
-    std::vector<MPI_Status>  stats(NUM_SLOTS);   // optional bookkeeping
+    std::vector<MPI_Status>  stats(NUM_SLOTS); // optional bookkeeping
 
     /* initial Irecvs */
     for (int i = 0; i < NUM_SLOTS; ++i)
-        MPI_Irecv(bufs[i].data(), bufs[i].size(), MPI_BYTE,
-                  MPI_ANY_SOURCE, MPI_ANY_TAG,
-                  MPI_COMM_WORLD, &reqs[i]);
+        MPI_Irecv(
+            bufs[i].data(),
+            bufs[i].size(),
+            MPI_BYTE,
+            MPI_ANY_SOURCE,
+            MPI_ANY_TAG,
+            MPI_COMM_WORLD,
+            &reqs[i]
+        );
 
     while (done_actors.load(std::memory_order_relaxed) < world_size - 1)
     {
         int idx;
-        MPI_Status st;                                  // <-- local status
+        MPI_Status st; // <-- local status
         MPI_Waitany(NUM_SLOTS, reqs.data(), &idx, &st);
-        if (idx == MPI_UNDEFINED) continue;             // safety
+        if (idx == MPI_UNDEFINED) continue; // safety
 
-        stats[idx] = st;                                // keep a copy (optional)
+        stats[idx] = st; // keep a copy (optional)
 
-        const int tag = st.MPI_TAG;
-        const int src = st.MPI_SOURCE;
+        const int tag  = st.MPI_TAG;
+        const int src  = st.MPI_SOURCE;
         int       nbyt = 0;
         MPI_Get_count(&st, MPI_BYTE, &nbyt);
         auto&     buf  = bufs[idx];
@@ -246,8 +252,15 @@ void mpi_receiver_posted(
             std::memcpy(&player, buf.data(), sizeof(player));
 
             uint64_t ver = models->getLatestVersion(player);
-            if (MPI_Send(&ver, 1, MPI_UNSIGNED_LONG_LONG, src,
-                         TAG_VERSION_RES, MPI_COMM_WORLD) != MPI_SUCCESS)
+            auto res = MPI_Send(
+                            &ver,
+                            1,
+                            MPI_UNSIGNED_LONG_LONG,
+                            src,
+                            TAG_VERSION_RES,
+                            MPI_COMM_WORLD
+                        );
+            if (res != MPI_SUCCESS)
                 std::cerr << "MPI_Send(version_res) failed\n";
             break;
         }
@@ -263,9 +276,16 @@ void mpi_receiver_posted(
             std::vector<uint8_t> out(sizeof(uint64_t) + w.size());
             std::memcpy(out.data(), &ver, sizeof(uint64_t));
             std::memcpy(out.data() + sizeof(uint64_t), w.data(), w.size());
+            auto res = MPI_Send(
+                            out.data(),
+                            out.size(),
+                            MPI_BYTE,
+                            src,
+                            TAG_WEIGHTS_RES,
+                            MPI_COMM_WORLD
+                        );
 
-            if (MPI_Send(out.data(), out.size(), MPI_BYTE, src,
-                         TAG_WEIGHTS_RES, MPI_COMM_WORLD) != MPI_SUCCESS)
+            if (res != MPI_SUCCESS)
                 std::cerr << "MPI_Send(weights_res) failed\n";
             break;
         }
@@ -285,13 +305,19 @@ void mpi_receiver_posted(
             break;
         }
 
-        /* repost slot */
-        MPI_Irecv(buf.data(), buf.size(), MPI_BYTE,
-                  MPI_ANY_SOURCE, MPI_ANY_TAG,
-                  MPI_COMM_WORLD, &reqs[idx]);
+        // repost slot
+        MPI_Irecv(
+            buf.data(),
+            buf.size(),
+            MPI_BYTE,
+            MPI_ANY_SOURCE,
+            MPI_ANY_TAG,
+            MPI_COMM_WORLD, &reqs[idx]
+        );
     }
 
-    for (auto& b : buffers) b->setDraining();
+    for (auto& b : buffers)
+        b->setDraining();
 }
 
 int main(int argc, char** argv) {
