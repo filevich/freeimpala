@@ -91,6 +91,14 @@ Warning: When using OpenMPI don't forget to add `module load mpi/openmpi-x86_64`
 
 ### Option 3: Compile manually
 
+Single-machine freeimpala:
+
 ```sh
-mpicxx -g -O3 -DNDEBUG -DUSE_MPI -I./include -std=c++17 -Wall -Wextra ./cmd/freeimpala_mpi/main_mpi.cpp -o freeimpala_mpi_local -lstdc++fs -pthread
+g++ -g -O3 -DNDEBUG -I./include -I./vendor -std=c++17 -Wall -Wextra ./cmd/freeimpala/main.cpp -o freeimpala -lstdc++fs -pthread
+```
+
+Multi-machine MPI-based freimpala (e.g., `freeimpala_mpi_sync`)
+
+```sh
+mpicxx -g -O3 -DNDEBUG -DUSE_MPI -I./include -I./vendor -std=c++17 -Wall -Wextra ./cmd/freeimpala_mpi_sync/main_mpi_sync.cpp -o freeimpala_mpi_sync -lstdc++fs -pthread
 ```
