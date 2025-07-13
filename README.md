@@ -1,6 +1,8 @@
 
 ## Run
 
+### Threaded version
+
 ```sh
 ./build/freeimpala \
     --players 1 \
@@ -12,13 +14,38 @@
     --agent-time 1000
 ```
 
+### MPI version
+
+```sh
+mpirun -n 5 \
+    ./build/freeimpala_mpi \
+    --players 2 \
+    --iterations 320 \
+    --buffer-capacity 32 \
+    --batch-size 32 \
+    --learner-time 100 \
+    --agent-time 100 \
+    --seed 42
+```
+
+Notice that there are no `--agents` flags in the MPI version. In this version 
+the number of agents is automatically derived as `n - 1`.
+
 ## GPU bench
 
 ```sh
-python benchmark.py --batch-size 64 --seq-length 100 --learning-rate 0.0005 --loss-function mse --optimizer adam --runs 10 --no-save --gpu cuda
+python benchmark.py \
+    --batch-size 64 \
+    --seq-length 100 \
+    --learning-rate 0.0005 \
+    --loss-function mse \
+    --optimizer adam \
+    --runs 10 \
+    --no-save \
+    --gpu cuda
 ```
 
-or `--gpu mps`
+for `--gpu` use `mps`, `cpu`, `cuda` or `auto`
 
 
 ## Docker + Singularity cluster
@@ -43,10 +70,27 @@ singularity build --force $HOME/img/freeimpala_amd64.sif docker-archive://$HOME/
 
 ### Option 2: Build with Docker targetting arch ➡️ Extract binary ➡️ Upload bin
 
+Get cross-compilation by matching target platform with `--platform linux/amd64`.
+
 ```sh
 docker build --no-cache --platform linux/amd64 -t freeimpala:dev-amd64 -f Dockerfile .
 docker run --rm -v /tmp:/output freeimpala:dev-amd64 cp /app/freeimpala /output/freeimpala
 rsync -avz -e "ssh -p 10022" /tmp/freeimpala cluster.uy:~/bin/
 ```
 
-then, `~/bin/freeimpala` should just work.
+For MPI use
+
+```sh
+docker build --no-cache --progress=plain --platform linux/amd64 -t freeimpala:dev-amd64-openmpi -f Dockerfile.OpenMPI --build-arg OPENMPI_VERSION=5.0.5 .
+docker run --rm -v /tmp:/output freeimpala:dev-amd64-openmpi cp /usr/local/bin/freeimpala_mpi /output/freeimpala_mpi
+rsync -avz -e "ssh -p 10022" /tmp/freeimpala_mpi cluster.uy:~/bin/
+```
+then, `~/bin/{freeimpala,freeimpala_mpi}` should just work.
+
+Warning: When using OpenMPI don't forget to add `module load mpi/openmpi-x86_64` to your `~/.bashrc` (or equivalent).
+
+### Option 3: Compile manually
+
+```sh
+mpicxx -g -O3 -DNDEBUG -DUSE_MPI -I./include -std=c++17 -Wall -Wextra ./cmd/freeimpala_mpi/main_mpi.cpp -o freeimpala_mpi_local -lstdc++fs -pthread
+```

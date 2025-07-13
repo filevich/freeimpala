@@ -1,0 +1,54 @@
+# Use continuumio/miniconda3 as the base image
+FROM continuumio/miniconda3:latest
+
+# Define build argument for OpenMPI version with default
+ARG OPENMPI_VERSION=5.0.5
+
+# Install OpenMPI, CMake, and compilers via conda
+RUN conda install -c conda-forge \
+        openmpi=${OPENMPI_VERSION} \
+        cmake \
+        make \
+        compilers && \
+    conda clean -afy
+
+# Install additional system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libssl-dev \
+        wget && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+COPY . /app
+
+# Ensure Conda's bin and lib directories are in PATH and LD_LIBRARY_PATH
+ENV PATH="/opt/conda/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/opt/conda/lib:${LD_LIBRARY_PATH}"
+
+# Allow OpenMPI to run as root within the Docker container
+ENV OMPI_ALLOW_RUN_AS_ROOT=1
+ENV OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+
+# Explicitly activate Conda environment
+RUN . /opt/conda/etc/profile.d/conda.sh && conda activate base
+
+RUN mkdir -p build && \
+    cd build && \
+    cmake -DCMAKE_CXX_COMPILER=mpicxx -DCMAKE_C_COMPILER=mpicc -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON .. && \
+    cmake --build . 
+
+RUN mkdir -p /usr/local/bin/ && \
+    mv /app/build/freeimpala /usr/local/bin/ && \
+    mv /app/build/freeimpala_mpi /usr/local/bin/ && \
+    rm -rf /app
+
+# Verify OpenMPI version
+RUN mpirun --version
+
+# Verify binaries exist
+RUN ls -l /usr/local/bin/freeimpala /usr/local/bin/freeimpala_mpi || true
+
+# Set entrypoint to run the binaries (optional, adjust as needed)
+CMD ["/bin/bash"]

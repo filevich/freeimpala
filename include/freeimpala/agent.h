@@ -5,6 +5,10 @@
 #include "freeimpala/data_structures.h"
 #include "freeimpala/metrics_tracker.h"
 
+#ifdef USE_MPI
+#include <mpi.h>
+#endif
+
 class Agent {
 private:
     // Configuration
@@ -73,25 +77,33 @@ private:
     // Transfer thread function (one per player)
     void transferThread(size_t player_index, std::promise<void>& promise) {
         auto metrics = MetricsTracker::getInstance();
-        auto timer = metrics->createTransferTimer();
-        
-        auto& local_buffer = local_buffers[player_index];
-        auto& shared_buffer = shared_buffers[player_index];
-        
-        // If local buffer is filled, transfer to shared buffer
-        if (local_buffer->getEntry().filled) {
-            // Use blocking write - it will wait until space is available
-            // The write function internally handles waiting via condition variables
-            bool success = shared_buffer->write(local_buffer->getEntry().data);
-            
+        auto timer   = metrics->createTransferTimer();
+
+        auto& entry = local_buffers[player_index]->getEntry();
+
+        if (entry.filled) {
+#ifdef USE_MPI
+            // send buffer, to learner (rank 0)
+            const int tag = TAG_TRAJECTORY_BASE + static_cast<int>(player_index);
+            if (MPI_Send(entry.data.data(), entry.data.size(), MPI_CHAR, 0, tag, MPI_COMM_WORLD) != MPI_SUCCESS) {
+                std::stringstream ss;
+                ss << "Error: Agent " << agent_id << " failed to send trajectory data for player "
+                   << player_index << " via MPI_Send (tag=" << tag << ")" << std::endl;
+                std::cerr << ss.str();
+            }
+            // count it (to metrics)
+            metrics->recordDataTransfer();
+#else
+            bool success = shared_buffers[player_index]->write(entry.data);
             if (success) {
                 metrics->recordDataTransfer();
             } else {
-                std::cerr << "Agent " << agent_id << ": Failed to write data for player " 
-                        << player_index << " (buffer size mismatch)" << std::endl;
+                std::cerr << "Agent " << agent_id
+                        << ": failed to write data for player "
+                        << player_index << '\n';
             }
+#endif
         }
-        
         promise.set_value();
     }
     
@@ -99,7 +111,52 @@ private:
     void modelUpdateThread(size_t player_index, std::promise<void>& promise) {
         auto metrics = MetricsTracker::getInstance();
         auto timer = metrics->createSyncTimer();
-        
+
+#ifdef USE_MPI
+        uint32_t p32 = static_cast<uint32_t>(player_index);
+        if (MPI_Send(&p32, 1, MPI_UNSIGNED, 0, TAG_VERSION_REQ, MPI_COMM_WORLD) != MPI_SUCCESS) {
+            std::stringstream ss;
+            ss << "Error: Agent " << agent_id << " failed to send version request for player "
+               << player_index << " via MPI_Send (tag=" << TAG_VERSION_REQ << ")" << std::endl;
+            std::cerr << ss.str();
+        }
+
+        // Wait for the learner's answer (blocking)
+        uint64_t latest_version;
+        MPI_Recv(&latest_version, 1, MPI_UNSIGNED_LONG_LONG, 0, TAG_VERSION_RES, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        if (latest_version > current_model_versions[player_index]) {
+            // Request the weights for that player
+            if (MPI_Send(&p32, 1, MPI_UNSIGNED, 0, TAG_WEIGHTS_REQ, MPI_COMM_WORLD) != MPI_SUCCESS) {
+                std::stringstream ss;
+                ss << "Error: Agent " << agent_id << " failed to send weights request for player "
+                << player_index << " via MPI_Send (tag=" << TAG_WEIGHTS_REQ << ")" << std::endl;
+                std::cerr << ss.str();
+            }
+
+            // Get the data size
+            const size_t model_size = local_models[player_index]->getData().size();
+            const size_t total_size = sizeof(uint64_t) + model_size;
+
+            // Create a buffer to hold version + data
+            std::vector<uint8_t> buffer(total_size);
+
+            // Receive the data
+            MPI_Recv(buffer.data(), total_size, MPI_BYTE, 0, TAG_WEIGHTS_RES, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            // Extract version (remember: careful about endianness when mixing x86_64/amd64 with arm/powerpc)
+            uint64_t new_version;
+            std::memcpy(&new_version, buffer.data(), sizeof(uint64_t));
+
+            // Extract data and convert to std::vector<char>
+            std::vector<char> new_data(buffer.begin() + sizeof(uint64_t), buffer.end());
+
+            // Call update function
+            local_models[player_index]->update(new_data, new_version);
+            current_model_versions[player_index] = new_version;
+            metrics->recordAgentModelSync();
+        }
+#else
         // Check if there's a new model available
         uint64_t current_version = current_model_versions[player_index];
         uint64_t latest_version = model_manager->getLatestVersion(player_index);
@@ -132,7 +189,7 @@ private:
                 metrics->recordAgentModelSync();
             }
         }
-        
+#endif        
         promise.set_value();
     }
 

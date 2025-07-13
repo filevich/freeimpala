@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(freeimpala)
+project(freeimpala CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -8,50 +8,35 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Add compiler flags
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pthread")
 
-# Add static linking flags (supported only by unix)
-if (APPLE)
-    message(STATUS "Configuring for macOS (AppleClang with libc++)")
-    # Don't try static linking or -static-libstdc++/libgcc
-elseif (UNIX)
-    message(STATUS "Configuring for Linux")
-    # Only do this on Linux/GCC where it's valid
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
-endif()
-
-# Add include directories
+# Add include directories (shared across all executables)
 include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/vendor/argparse
 )
 
+# NOTE: Removed FetchContent for argparse as it's now vendored; but keeping it
+# commented just in case.
 # Download argparse header-only library
-include(FetchContent)
-FetchContent_Declare(
-    argparse
-    GIT_REPOSITORY https://github.com/p-ranav/argparse.git
-    GIT_TAG v2.9
-)
-FetchContent_MakeAvailable(argparse)
+# include(FetchContent)
+# FetchContent_Declare(
+#     argparse
+#     GIT_REPOSITORY https://github.com/p-ranav/argparse.git
+#     GIT_TAG v2.9
+# )
+# FetchContent_MakeAvailable(argparse)
 
-# Add source files
-set(SOURCES
-    src/main.cpp
-)
+# Add subdirectories for executables
+add_subdirectory(cmd/freeimpala)
 
-# Create executable
-add_executable(freeimpala ${SOURCES})
-
-# Link libraries
-target_link_libraries(freeimpala
-    PRIVATE
-    argparse
-)
-
-# Include directories
-target_include_directories(freeimpala
-    PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-# Install target
-install(TARGETS freeimpala DESTINATION bin)
+# Find MPI and include freeimpala_mpi_* subdirectories if found
+find_package(MPI)
+if (MPI_CXX_FOUND)
+    message(STATUS "MPI C++ bindings found. Including freeimpala_mpi_sync subdirectory.")
+    add_subdirectory(cmd/freeimpala_mpi_sync)
+    message(STATUS "MPI C++ bindings found. Including freeimpala_mpi_async subdirectory.")
+    add_subdirectory(cmd/freeimpala_mpi_async)
+    message(STATUS "MPI C++ bindings found. Including freeimpala_mpi_async_pool subdirectory.")
+    add_subdirectory(cmd/freeimpala_mpi_async_pool)
+else()
+    message(WARNING "MPI C++ bindings not found. Skipping 'freeimpala_mpi_async_pool' target.")
+endif()
