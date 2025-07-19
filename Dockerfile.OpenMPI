@@ -40,15 +40,14 @@ RUN mkdir -p build && \
     cmake --build . 
 
 RUN mkdir -p /usr/local/bin/ && \
-    mv /app/build/freeimpala /usr/local/bin/ && \
-    mv /app/build/freeimpala_mpi /usr/local/bin/ && \
+    mv /app/build/* /usr/local/bin/ && \
     rm -rf /app
 
 # Verify OpenMPI version
 RUN mpirun --version
 
 # Verify binaries exist
-RUN ls -l /usr/local/bin/freeimpala /usr/local/bin/freeimpala_mpi || true
+RUN ls -l /usr/local/bin/ || true
 
 # Set entrypoint to run the binaries (optional, adjust as needed)
 CMD ["/bin/bash"]
