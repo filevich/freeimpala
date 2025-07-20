@@ -32,7 +32,7 @@ Notice that there are no `--agents` flags in the MPI version. In this version
 the number of agents is automatically derived as `n - 1`.
 
 
-## Docker + Singularity cluster
+## Compile
 
 ### Option 1: Build with Docker ➡️ Upload Docker image ➡️ Translate to Singularity
 
