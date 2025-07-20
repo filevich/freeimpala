@@ -66,10 +66,12 @@ For MPI use
 
 ```sh
 docker build --no-cache --progress=plain --platform linux/amd64 -t freeimpala:dev-amd64-openmpi -f Dockerfile.OpenMPI --build-arg OPENMPI_VERSION=5.0.5 .
-docker run --rm -v /tmp:/output freeimpala:dev-amd64-openmpi cp /usr/local/bin/freeimpala_mpi /output/freeimpala_mpi
-rsync -avz -e "ssh -p 10022" /tmp/freeimpala_mpi cluster:~/bin/
+docker run --rm -v /tmp:/output freeimpala:dev-amd64-openmpi cp /usr/local/bin/freeimpala_mpi_sync /output
+docker run --rm -v /tmp:/output freeimpala:dev-amd64-openmpi cp /usr/local/bin/freeimpala_mpi_async /output
+docker run --rm -v /tmp:/output freeimpala:dev-amd64-openmpi cp /usr/local/bin/freeimpala_mpi_async_pool /output
+rsync -avz -e "ssh -p 10022" '/tmp/freeimpala_mpi_*' cluster:~/bin/
 ```
-then, `~/bin/{freeimpala,freeimpala_mpi}` should just work.
+then, `~/bin/{freeimpala,freeimpala_mpi_sync, freeimpala_mpi_async, freeimpala_mpi_async_pool}` should just work.
 
 Warning: When using OpenMPI don't forget to add `module load mpi/openmpi-x86_64` to your `~/.bashrc` (or equivalent).
 
