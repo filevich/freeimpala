@@ -31,22 +31,6 @@ mpirun -n 5 \
 Notice that there are no `--agents` flags in the MPI version. In this version 
 the number of agents is automatically derived as `n - 1`.
 
-## GPU bench
-
-```sh
-python benchmark.py \
-    --batch-size 64 \
-    --seq-length 100 \
-    --learning-rate 0.0005 \
-    --loss-function mse \
-    --optimizer adam \
-    --runs 10 \
-    --no-save \
-    --gpu cuda
-```
-
-for `--gpu` use `mps`, `cpu`, `cuda` or `auto`
-
 
 ## Docker + Singularity cluster
 
@@ -102,3 +86,19 @@ Multi-machine MPI-based freimpala (e.g., `freeimpala_mpi_sync`)
 ```sh
 mpicxx -g -O3 -DNDEBUG -DUSE_MPI -I./include -I./vendor -std=c++17 -Wall -Wextra ./cmd/freeimpala_mpi_sync/main_mpi_sync.cpp -o freeimpala_mpi_sync -lstdc++fs -pthread
 ```
+
+## GPU bench
+
+```sh
+python benchmark.py \
+    --batch-size 64 \
+    --seq-length 100 \
+    --learning-rate 0.0005 \
+    --loss-function mse \
+    --optimizer adam \
+    --runs 10 \
+    --no-save \
+    --gpu cuda
+```
+
+for `--gpu` use `mps`, `cpu`, `cuda` or `auto`
