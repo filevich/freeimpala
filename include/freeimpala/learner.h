@@ -122,7 +122,7 @@ public:
         // Create model manager
         model_manager = std::make_shared<ModelManager>(
             num_players, 
-            1 * 1024 * 1024,  // 6MB for dummy model; same as DouZero
+            1 * 1024 * 1024,  // use 6MB for dummy model instead of 1MB in order to mimic DouZero's NN size
             checkpoint_location
         );
         
