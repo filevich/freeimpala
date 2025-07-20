@@ -56,7 +56,7 @@ Change `--platform linux/amd64` accordingly.
 
 ```sh
 docker build --no-cache --platform linux/amd64 -t freeimpala:dev-amd64 -f Dockerfile . && \
-docker save freeimpala:dev-amd64 | ssh -p 10022 cluster.uy "cat > ~/img/freeimpala_amd64.tar"
+docker save freeimpala:dev-amd64 | ssh -p 10022 cluster "cat > ~/img/freeimpala_amd64.tar"
 ```
 
 then, ssh into the server and:
@@ -75,7 +75,7 @@ Get cross-compilation by matching target platform with `--platform linux/amd64`.
 ```sh
 docker build --no-cache --platform linux/amd64 -t freeimpala:dev-amd64 -f Dockerfile .
 docker run --rm -v /tmp:/output freeimpala:dev-amd64 cp /app/freeimpala /output/freeimpala
-rsync -avz -e "ssh -p 10022" /tmp/freeimpala cluster.uy:~/bin/
+rsync -avz -e "ssh -p 10022" /tmp/freeimpala cluster:~/bin/
 ```
 
 For MPI use
@@ -83,7 +83,7 @@ For MPI use
 ```sh
 docker build --no-cache --progress=plain --platform linux/amd64 -t freeimpala:dev-amd64-openmpi -f Dockerfile.OpenMPI --build-arg OPENMPI_VERSION=5.0.5 .
 docker run --rm -v /tmp:/output freeimpala:dev-amd64-openmpi cp /usr/local/bin/freeimpala_mpi /output/freeimpala_mpi
-rsync -avz -e "ssh -p 10022" /tmp/freeimpala_mpi cluster.uy:~/bin/
+rsync -avz -e "ssh -p 10022" /tmp/freeimpala_mpi cluster:~/bin/
 ```
 then, `~/bin/{freeimpala,freeimpala_mpi}` should just work.
 
