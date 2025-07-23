@@ -1,4 +1,5 @@
 #include <argparse/argparse.hpp>
+#include <spdlog/spdlog.h>
 #include <chrono>
 #include <iostream>
 #include <memory>
@@ -9,6 +10,7 @@
 #include <cmath>
 #include "freeimpala/learner.h"
 #include "freeimpala/agent.h"
+#include "freeimpala/utils.h"
 
 // Structure to hold all command-line parameters
 struct ProgramParams {
@@ -271,6 +273,10 @@ void cleanup(
 }
 
 int main(int argc, char** argv) {
+    Utils::init_logs();
+
+    spdlog::info("Logs initialized");
+
     ProgramParams params;
 
     // Parse and validate parameters
