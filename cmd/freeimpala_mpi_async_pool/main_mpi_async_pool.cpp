@@ -384,7 +384,7 @@ int main(int argc, char** argv) {
 
     // learner process for rank == 0
     if (rank == 0) {
-        std::cerr << "gemini boost SLIM 8t\n";
+        std::cerr << "boost SLIM 8t\n";
         auto metrics = MetricsTracker::getInstance();
         metrics->start();
 
