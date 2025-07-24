@@ -28,6 +28,7 @@ struct ProgramParams {
     size_t agent_time;
     std::string metrics_file;
     unsigned int seed;
+    std::string log_level;
 };
 
 // Setup argument parser with all parameters
@@ -103,6 +104,12 @@ void setupArgumentParser(argparse::ArgumentParser& program) {
         .help("Seed for random number generation")
         .default_value(static_cast<unsigned int>(std::time(nullptr)))
         .scan<'u', unsigned int>();
+    
+    // Log level parameter with restricted choices
+    program.add_argument("-l", "--log-level")
+        .help("Set the logging level")
+        .default_value("info")
+        .choices("trace", "debug", "info", "warn", "error", "critical", "off");
 }
 
 // Parse command line arguments and extract parameters
@@ -136,6 +143,7 @@ bool parseParameters(
     params.agent_time = program.get<int>("--agent-time");
     params.metrics_file = program.get<std::string>("--metrics-file");
     params.seed = program.get<unsigned int>("--seed");
+    params.log_level = program.get<std::string>("--log-level");
 
     return true;
 }
@@ -244,8 +252,6 @@ void cleanup(
 }
 
 int main(int argc, char** argv) {
-    Utils::init_logs();
-
     ProgramParams params;
 
     // Parse and validate parameters
@@ -257,6 +263,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    Utils::init_logs(params.log_level);
     std::srand(params.seed);
 
     auto metrics = MetricsTracker::getInstance();
