@@ -106,7 +106,7 @@ void setupArgumentParser(argparse::ArgumentParser& program) {
         .scan<'u', unsigned int>();
     
     // Log level parameter with restricted choices
-    program.add_argument("-l", "--log-level")
+    program.add_argument("--log-level")
         .help("Set the logging level")
         .default_value("info")
         .choices("trace", "debug", "info", "warn", "error", "critical", "off");
