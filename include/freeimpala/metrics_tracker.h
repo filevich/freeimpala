@@ -265,7 +265,7 @@ public:
     void saveMetricsToCSV(const std::string& filename) const {
         std::ofstream file(filename);
         if (!file) {
-            spdlog::error("Error: Could not open file for writing: {}", filename);
+            spdlog::error("Could not open file for writing: {}", filename);
             return;
         }
         

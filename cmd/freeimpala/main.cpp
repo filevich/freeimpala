@@ -145,12 +145,12 @@ bool parseParameters(
 // Validate parameters
 bool validateParameters(const ProgramParams& params) {
     if (params.batch_size > params.buffer_capacity) {
-        spdlog::error("Error: Batch size must be less than buffer capacity");
+        spdlog::error("Batch size must be less than buffer capacity");
         return false;
     }
     
     if (params.game_steps > params.entry_size) {
-        spdlog::error("Error: Game steps must be less than or equal to entry size");
+        spdlog::error("Game steps must be less than or equal to entry size");
         return false;
     }
     

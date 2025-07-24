@@ -149,12 +149,12 @@ bool parseParameters(
 // Validate parameters
 bool validateParameters(const ProgramParams& params) {
     if (params.batch_size > params.buffer_capacity) {
-        spdlog::error("Error: Batch size must be less than buffer capacity");
+        spdlog::error("Batch size must be less than buffer capacity");
         return false;
     }
     
     if (params.game_steps > params.entry_size) {
-        spdlog::error("Error: Game steps must be less than or equal to entry size");
+        spdlog::error("Game steps must be less than or equal to entry size");
         return false;
     }
     
@@ -205,7 +205,7 @@ void process_tag(
 
             uint32_t v = models->getLatestVersion(p);
             if (MPI_Send(&v, 1, MPI_UNSIGNED, src, MessageTag::TAG_VERSION_RES, MPI_COMM_WORLD) != MPI_SUCCESS) {
-                spdlog::error("Error: Failed to send version response to rank {} for player {} ", src, p);
+                spdlog::error("Failed to send version response to rank {} for player {} ", src, p);
             }
             break;
         }
@@ -224,7 +224,7 @@ void process_tag(
             std::memcpy(out.data()+sizeof(uint32_t), modelCopy->getData().data(), sz);
 
             if (MPI_Send(out.data(), out.size(), MPI_BYTE, src, MessageTag::TAG_WEIGHTS_RES, MPI_COMM_WORLD) != MPI_SUCCESS) {
-                spdlog::error("Error: Failed to send weights response to rank {} for player {}", src, p);
+                spdlog::error("Failed to send weights response to rank {} for player {}", src, p);
             }
             break;
         }
@@ -355,7 +355,7 @@ int main(int argc, char** argv) {
 
         // Tell learner we are done
         if (MPI_Send(nullptr, 0, MPI_CHAR, 0, MessageTag::TAG_TERMINATE, MPI_COMM_WORLD) != MPI_SUCCESS) {
-            spdlog::error("Error: Failed to send TAG_TERMINATE message to learner from rank {}", rank);
+            spdlog::error("Failed to send TAG_TERMINATE message to learner from rank {}", rank);
         }
     }
 

@@ -148,12 +148,12 @@ bool parseParameters(
 // Validate parameters
 bool validateParameters(const ProgramParams& params) {
     if (params.batch_size > params.buffer_capacity) {
-        spdlog::error("Error: Batch size must be less than buffer capacity");
+        spdlog::error("Batch size must be less than buffer capacity");
         return false;
     }
     
     if (params.game_steps > params.entry_size) {
-        spdlog::error("Error: Game steps must be less than or equal to entry size");
+        spdlog::error("Game steps must be less than or equal to entry size");
         return false;
     }
     
@@ -402,7 +402,7 @@ int main(int argc, char** argv) {
 
         // Tell learner we are done
         if (MPI_Send(nullptr, 0, MPI_CHAR, 0, MessageTag::TAG_TERMINATE, MPI_COMM_WORLD) != MPI_SUCCESS) {
-            spdlog::error("Error: Failed to send TAG_TERMINATE message to learner from rank {}", rank);
+            spdlog::error("Failed to send TAG_TERMINATE message to learner from rank {}", rank);
         }
     }
 

@@ -88,7 +88,7 @@ public:
     bool saveToDisk() {
         // Safety check for empty filepath
         if (filepath.empty()) {
-            spdlog::error("Error: Cannot save model with empty filepath");
+            spdlog::error("Cannot save model with empty filepath");
             return false;
         }
         
@@ -99,7 +99,7 @@ public:
 
         std::ofstream file(filepath, std::ios::binary);
         if (!file) {
-            spdlog::info("Error: Could not open file for writing: {}", filepath);
+            spdlog::info("Could not open file for writing: {}", filepath);
             return false;
         }
 
@@ -388,14 +388,14 @@ public:
     // Save a specific model to disk with versioned filename
     void saveModel(size_t player_index, uint64_t current_iteration = 0) {
         if (player_index >= models.size() || !models[player_index]) {
-            spdlog::error("Error: Invalid model index or null model: {}", player_index);
+            spdlog::error("Invalid model index or null model: {}", player_index);
             return;
         }
         
         // Create a deep copy of the model
         std::shared_ptr<Model> model_copy = models[player_index]->createCopy();
         if (!model_copy) {
-            spdlog::error("Error: Failed to create model copy for player {}", player_index);
+            spdlog::error("Failed to create model copy for player {}", player_index);
             return;
         }
         
@@ -419,7 +419,7 @@ public:
             latest_model->update(model_copy->getData());
             latest_model->saveToDisk();
         } else {
-            spdlog::error("Error: Failed to save checkpoint for player {}", player_index);
+            spdlog::error("Failed to save checkpoint for player {}", player_index);
         }
     }
     

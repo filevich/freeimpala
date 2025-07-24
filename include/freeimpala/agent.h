@@ -87,7 +87,7 @@ private:
             // send buffer, to learner (rank 0)
             const int tag = MessageTag::TAG_TRAJECTORY_BASE + static_cast<int>(player_index);
             if (MPI_Send(entry.data.data(), entry.data.size(), MPI_CHAR, 0, tag, MPI_COMM_WORLD) != MPI_SUCCESS) {
-                spdlog::error("Error: Agent {} failed to send trajectory data for player {} via MPI_Send (tag={})",
+                spdlog::error("Agent {} failed to send trajectory data for player {} via MPI_Send (tag={})",
                     agent_id, player_index, tag);
                 
             }
@@ -98,7 +98,7 @@ private:
             if (success) {
                 metrics->recordDataTransfer();
             } else {
-                spdlog::error("Error: Agent {}: failed to write data for player {}", agent_id, player_index);
+                spdlog::error("Agent {}: failed to write data for player {}", agent_id, player_index);
             }
 #endif
         }
@@ -113,7 +113,7 @@ private:
 #ifdef USE_MPI
         uint32_t p32 = static_cast<uint32_t>(player_index);
         if (MPI_Send(&p32, 1, MPI_UNSIGNED, 0, MessageTag::TAG_VERSION_REQ, MPI_COMM_WORLD) != MPI_SUCCESS) {
-            spdlog::error("Error: Agent {} failed to send version request for player {} via MPI_Send (tag={})",
+            spdlog::error("Agent {} failed to send version request for player {} via MPI_Send (tag={})",
                 agent_id, player_index, static_cast<int>(MessageTag::TAG_VERSION_REQ));
         }
 
@@ -124,7 +124,7 @@ private:
         if (latest_version > current_model_versions[player_index]) {
             // Request the weights for that player
             if (MPI_Send(&p32, 1, MPI_UNSIGNED, 0, MessageTag::TAG_WEIGHTS_REQ, MPI_COMM_WORLD) != MPI_SUCCESS) {
-                spdlog::error("Error: Agent {} failed to send weights request for player {} via MPI_Send (tag={})",
+                spdlog::error("Agent {} failed to send weights request for player {} via MPI_Send (tag={})",
                     agent_id, player_index, static_cast<int>(MessageTag::TAG_WEIGHTS_REQ));
             }
 
