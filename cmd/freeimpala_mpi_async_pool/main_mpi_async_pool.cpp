@@ -119,7 +119,6 @@ bool parseParameters(
     char** argv,
     ProgramParams& params
 ) {
-    std::stringstream ss;
     argparse::ArgumentParser program("freeimpala");
     setupArgumentParser(program);
     
