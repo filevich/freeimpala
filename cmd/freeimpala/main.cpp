@@ -248,8 +248,6 @@ void cleanup(
 int main(int argc, char** argv) {
     Utils::init_logs();
 
-    spdlog::info("Logs initialized");
-
     ProgramParams params;
 
     // Parse and validate parameters
