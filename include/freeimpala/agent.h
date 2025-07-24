@@ -98,7 +98,7 @@ private:
             if (success) {
                 metrics->recordDataTransfer();
             } else {
-                spdlog::error("Agent {}: failed to write data for player {}", agent_id, player_index);
+                spdlog::error("Error: Agent {}: failed to write data for player {}", agent_id, player_index);
             }
 #endif
         }

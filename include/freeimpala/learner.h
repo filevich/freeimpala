@@ -183,7 +183,7 @@ public:
         worker_threads.clear();
         
         // Save final model state if needed
-        spdlog::error("Performing final model save before exit");
+        spdlog::info("Performing final model save before exit");
         uint64_t final_iteration = total_iterations; // Use total iterations as final checkpoint number
         model_manager->saveAllModels(final_iteration);
         
