@@ -64,7 +64,8 @@
         "stack": "cpp",
         "variant": "cpp",
         "chrono": "cpp",
-        "source_location": "cpp"
+        "source_location": "cpp",
+        "functional": "cpp"
     },
     "cmake.sourceDirectory": "${workspaceFolder}",
     "C_Cpp.default.compilerPath": "/usr/bin/g++",

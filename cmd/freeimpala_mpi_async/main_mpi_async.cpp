@@ -199,7 +199,7 @@ void process_tag(
 ) {
     switch (tag)
     {
-    case TAG_VERSION_REQ: {
+    case MessageTag::TAG_VERSION_REQ: {
         uint32_t player;
         std::memcpy(&player, buf.data(), sizeof(player));
 
@@ -209,7 +209,7 @@ void process_tag(
                         1,
                         MPI_UNSIGNED_LONG_LONG,
                         src,
-                        TAG_VERSION_RES,
+                        MessageTag::TAG_VERSION_RES,
                         MPI_COMM_WORLD
                     );
         if (res != MPI_SUCCESS)
@@ -217,7 +217,7 @@ void process_tag(
         break;
     }
 
-    case TAG_WEIGHTS_REQ: {
+    case MessageTag::TAG_WEIGHTS_REQ: {
         uint32_t player;
         std::memcpy(&player, buf.data(), sizeof(player));
 
@@ -233,7 +233,7 @@ void process_tag(
                         out.size(),
                         MPI_BYTE,
                         src,
-                        TAG_WEIGHTS_RES,
+                        MessageTag::TAG_WEIGHTS_RES,
                         MPI_COMM_WORLD
                     );
 
@@ -242,13 +242,13 @@ void process_tag(
         break;
     }
 
-    case TAG_TERMINATE:
+    case MessageTag::TAG_TERMINATE:
         done_actors.fetch_add(1, std::memory_order_relaxed);
         break;
 
     default:
-        if (tag >= TAG_TRAJECTORY_BASE) {
-            int player = tag - TAG_TRAJECTORY_BASE;
+        if (tag >= MessageTag::TAG_TRAJECTORY_BASE) {
+            int player = tag - MessageTag::TAG_TRAJECTORY_BASE;
             std::vector<char> traj(buf.begin(), buf.begin() + nbyt);
             buffers[player]->write(std::move(traj));
         } else {
@@ -401,7 +401,7 @@ int main(int argc, char** argv) {
         agent.run(); // same loop as before
 
         // Tell learner we are done
-        if (MPI_Send(nullptr, 0, MPI_CHAR, 0, TAG_TERMINATE, MPI_COMM_WORLD) != MPI_SUCCESS) {
+        if (MPI_Send(nullptr, 0, MPI_CHAR, 0, MessageTag::TAG_TERMINATE, MPI_COMM_WORLD) != MPI_SUCCESS) {
             spdlog::error("Error: Failed to send TAG_TERMINATE message to learner from rank {}", rank);
         }
     }

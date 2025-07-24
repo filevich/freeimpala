@@ -19,7 +19,7 @@
 #include <queue>
 #include <functional>
 
-enum : int {
+enum MessageTag : int {
     /* -------- actor -> learner -------- */
     TAG_TRAJECTORY_BASE = 100, // +player_idx, payload: [byte] buffer
     TAG_VERSION_REQ     = 200, // payload: uint32_t player_idx

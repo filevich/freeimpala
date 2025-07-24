@@ -245,17 +245,17 @@ void process_message(
     // Re-use the existing switch logic from process_tag
     switch (msg.tag)
     {
-        case TAG_VERSION_REQ: {
+        case MessageTag::TAG_VERSION_REQ: {
             uint32_t player;
             std::memcpy(&player, msg.buffer.data(), sizeof(player));
 
             uint64_t ver = models->getLatestVersion(player);
-            auto res = MPI_Send(&ver, 1, MPI_UNSIGNED_LONG_LONG, msg.source, TAG_VERSION_RES, MPI_COMM_WORLD);
+            auto res = MPI_Send(&ver, 1, MPI_UNSIGNED_LONG_LONG, msg.source, MessageTag::TAG_VERSION_RES, MPI_COMM_WORLD);
             if (res != MPI_SUCCESS) spdlog::error("MPI_Send(version_res) failed");
             break;
         }
 
-        case TAG_WEIGHTS_REQ: {
+        case MessageTag::TAG_WEIGHTS_REQ: {
             uint32_t player;
             std::memcpy(&player, msg.buffer.data(), sizeof(player));
 
@@ -266,20 +266,20 @@ void process_message(
             std::vector<uint8_t> out(sizeof(uint64_t) + w.size());
             std::memcpy(out.data(), &ver, sizeof(uint64_t));
             std::memcpy(out.data() + sizeof(uint64_t), w.data(), w.size());
-            auto res = MPI_Send(out.data(), out.size(), MPI_BYTE, msg.source, TAG_WEIGHTS_RES, MPI_COMM_WORLD);
+            auto res = MPI_Send(out.data(), out.size(), MPI_BYTE, msg.source, MessageTag::TAG_WEIGHTS_RES, MPI_COMM_WORLD);
             if (res != MPI_SUCCESS) spdlog::error("MPI_Send(weights_res) failed");
             break;
         }
 
-        // case TAG_TERMINATE: {
-        //     spdlog::info("rcv TAG_TERMINATE");
+        // case MessageTag::TAG_TERMINATE: {
+        //     spdlog::info("rcv MessageTag::TAG_TERMINATE");
         //     done_actors.fetch_add(1, std::memory_order_relaxed);
         //     break;
         // }
 
         default: {
-            if (msg.tag >= TAG_TRAJECTORY_BASE) {
-                int player = msg.tag - TAG_TRAJECTORY_BASE;
+            if (msg.tag >= MessageTag::TAG_TRAJECTORY_BASE) {
+                int player = msg.tag - MessageTag::TAG_TRAJECTORY_BASE;
                 // The buffer in msg already has the correct size
                 buffers[player]->write(std::move(msg.buffer));
             } else {
@@ -325,8 +325,8 @@ void mpi_receiver_posted(
 
         const int tag = st.MPI_TAG;
 
-        // Handle TAG_TERMINATE as a special case right here
-        if (tag == TAG_TERMINATE) {
+        // Handle MessageTag::TAG_TERMINATE as a special case right here
+        if (tag == MessageTag::TAG_TERMINATE) {
             done_actors.fetch_add(1, std::memory_order_relaxed);
             // No need to push to the queue, just handle it and loop.
             // The while condition will handle the exit.
@@ -449,8 +449,8 @@ int main(int argc, char** argv) {
         agent.run(); // same loop as before
 
         // Tell learner we are done
-        if (MPI_Send(nullptr, 0, MPI_CHAR, 0, TAG_TERMINATE, MPI_COMM_WORLD) != MPI_SUCCESS) {
-            spdlog::error("Error: Failed to send TAG_TERMINATE message to learner from rank {}", rank);
+        if (MPI_Send(nullptr, 0, MPI_CHAR, 0, MessageTag::TAG_TERMINATE, MPI_COMM_WORLD) != MPI_SUCCESS) {
+            spdlog::error("Error: Failed to send MessageTag::TAG_TERMINATE message to learner from rank {}", rank);
         }
     }
 

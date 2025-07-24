@@ -85,7 +85,7 @@ private:
         if (entry.filled) {
 #ifdef USE_MPI
             // send buffer, to learner (rank 0)
-            const int tag = TAG_TRAJECTORY_BASE + static_cast<int>(player_index);
+            const int tag = MessageTag::TAG_TRAJECTORY_BASE + static_cast<int>(player_index);
             if (MPI_Send(entry.data.data(), entry.data.size(), MPI_CHAR, 0, tag, MPI_COMM_WORLD) != MPI_SUCCESS) {
                 spdlog::error("Error: Agent {} failed to send trajectory data for player {} via MPI_Send (tag={})",
                     agent_id, player_index, tag);
@@ -112,18 +112,20 @@ private:
 
 #ifdef USE_MPI
         uint32_t p32 = static_cast<uint32_t>(player_index);
-        if (MPI_Send(&p32, 1, MPI_UNSIGNED, 0, TAG_VERSION_REQ, MPI_COMM_WORLD) != MPI_SUCCESS) {
-            spdlog::error("Error: Agent {} failed to send version request for player {} via MPI_Send (tag={})", agent_id, player_index, TAG_VERSION_REQ);
+        if (MPI_Send(&p32, 1, MPI_UNSIGNED, 0, MessageTag::TAG_VERSION_REQ, MPI_COMM_WORLD) != MPI_SUCCESS) {
+            spdlog::error("Error: Agent {} failed to send version request for player {} via MPI_Send (tag={})",
+                agent_id, player_index, static_cast<int>(MessageTag::TAG_VERSION_REQ));
         }
 
         // Wait for the learner's answer (blocking)
         uint64_t latest_version;
-        MPI_Recv(&latest_version, 1, MPI_UNSIGNED_LONG_LONG, 0, TAG_VERSION_RES, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&latest_version, 1, MPI_UNSIGNED_LONG_LONG, 0, MessageTag::TAG_VERSION_RES, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
         if (latest_version > current_model_versions[player_index]) {
             // Request the weights for that player
-            if (MPI_Send(&p32, 1, MPI_UNSIGNED, 0, TAG_WEIGHTS_REQ, MPI_COMM_WORLD) != MPI_SUCCESS) {
-                spdlog::error("Error: Agent {} failed to send weights request for player {} via MPI_Send (tag={})", agent_id, player_index, TAG_WEIGHTS_REQ);
+            if (MPI_Send(&p32, 1, MPI_UNSIGNED, 0, MessageTag::TAG_WEIGHTS_REQ, MPI_COMM_WORLD) != MPI_SUCCESS) {
+                spdlog::error("Error: Agent {} failed to send weights request for player {} via MPI_Send (tag={})",
+                    agent_id, player_index, static_cast<int>(MessageTag::TAG_WEIGHTS_REQ));
             }
 
             // Get the data size
@@ -134,7 +136,7 @@ private:
             std::vector<uint8_t> buffer(total_size);
 
             // Receive the data
-            MPI_Recv(buffer.data(), total_size, MPI_BYTE, 0, TAG_WEIGHTS_RES, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(buffer.data(), total_size, MPI_BYTE, 0, MessageTag::TAG_WEIGHTS_RES, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
             // Extract version (remember: careful about endianness when mixing x86_64/amd64 with arm/powerpc)
             uint64_t new_version;

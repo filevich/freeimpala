@@ -199,20 +199,20 @@ void process_tag(
 ) {
     switch (tag)
     {
-    case TAG_VERSION_REQ: {
+    case MessageTag::TAG_VERSION_REQ: {
             uint32_t p;
-            MPI_Recv(&p, 1, MPI_UNSIGNED, src, TAG_VERSION_REQ, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(&p, 1, MPI_UNSIGNED, src, MessageTag::TAG_VERSION_REQ, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
             uint32_t v = models->getLatestVersion(p);
-            if (MPI_Send(&v, 1, MPI_UNSIGNED, src, TAG_VERSION_RES, MPI_COMM_WORLD) != MPI_SUCCESS) {
+            if (MPI_Send(&v, 1, MPI_UNSIGNED, src, MessageTag::TAG_VERSION_RES, MPI_COMM_WORLD) != MPI_SUCCESS) {
                 spdlog::error("Error: Failed to send version response to rank {} for player {} ", src, p);
             }
             break;
         }
 
-    case TAG_WEIGHTS_REQ: {
+    case MessageTag::TAG_WEIGHTS_REQ: {
             uint32_t p;
-            MPI_Recv(&p, 1, MPI_UNSIGNED, src, TAG_WEIGHTS_REQ, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(&p, 1, MPI_UNSIGNED, src, MessageTag::TAG_WEIGHTS_REQ, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
             auto modelCopy = models->getModel(p)->createCopy();
 
@@ -223,14 +223,14 @@ void process_tag(
             std::memcpy(out.data(), &v, sizeof(uint32_t));
             std::memcpy(out.data()+sizeof(uint32_t), modelCopy->getData().data(), sz);
 
-            if (MPI_Send(out.data(), out.size(), MPI_BYTE, src, TAG_WEIGHTS_RES, MPI_COMM_WORLD) != MPI_SUCCESS) {
+            if (MPI_Send(out.data(), out.size(), MPI_BYTE, src, MessageTag::TAG_WEIGHTS_RES, MPI_COMM_WORLD) != MPI_SUCCESS) {
                 spdlog::error("Error: Failed to send weights response to rank {} for player {}", src, p);
             }
             break;
         }
 
-    case TAG_TERMINATE: {
-            MPI_Recv(nullptr, 0, MPI_CHAR, src, TAG_TERMINATE, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    case MessageTag::TAG_TERMINATE: {
+            MPI_Recv(nullptr, 0, MPI_CHAR, src, MessageTag::TAG_TERMINATE, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             done_actors.fetch_add(1);
             break;
         }
@@ -238,7 +238,7 @@ void process_tag(
     default: {
             // it's a `TAG_TRAJECTORY`
             // we need to "extract" the `player_idx` from the tag as follows
-            int player_idx = tag - TAG_TRAJECTORY_BASE;
+            int player_idx = tag - MessageTag::TAG_TRAJECTORY_BASE;
 
             std::vector<char> data(nbyt);
             MPI_Recv(data.data(), nbyt, MPI_CHAR, src, tag, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -354,7 +354,7 @@ int main(int argc, char** argv) {
         agent.run(); // same loop as before
 
         // Tell learner we are done
-        if (MPI_Send(nullptr, 0, MPI_CHAR, 0, TAG_TERMINATE, MPI_COMM_WORLD) != MPI_SUCCESS) {
+        if (MPI_Send(nullptr, 0, MPI_CHAR, 0, MessageTag::TAG_TERMINATE, MPI_COMM_WORLD) != MPI_SUCCESS) {
             spdlog::error("Error: Failed to send TAG_TERMINATE message to learner from rank {}", rank);
         }
     }
