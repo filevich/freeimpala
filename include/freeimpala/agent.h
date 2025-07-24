@@ -1,6 +1,7 @@
 #ifndef AGENT_H
 #define AGENT_H
 
+#include <spdlog/spdlog.h>
 #include <future>
 #include "freeimpala/data_structures.h"
 #include "freeimpala/metrics_tracker.h"
@@ -86,10 +87,9 @@ private:
             // send buffer, to learner (rank 0)
             const int tag = TAG_TRAJECTORY_BASE + static_cast<int>(player_index);
             if (MPI_Send(entry.data.data(), entry.data.size(), MPI_CHAR, 0, tag, MPI_COMM_WORLD) != MPI_SUCCESS) {
-                std::stringstream ss;
-                ss << "Error: Agent " << agent_id << " failed to send trajectory data for player "
-                   << player_index << " via MPI_Send (tag=" << tag << ")" << std::endl;
-                std::cerr << ss.str();
+                spdlog::error("Error: Agent {} failed to send trajectory data for player {} via MPI_Send (tag={})",
+                    agent_id, player_index, tag);
+                
             }
             // count it (to metrics)
             metrics->recordDataTransfer();
@@ -98,9 +98,7 @@ private:
             if (success) {
                 metrics->recordDataTransfer();
             } else {
-                std::cerr << "Agent " << agent_id
-                        << ": failed to write data for player "
-                        << player_index << '\n';
+                spdlog::error("Agent {}: failed to write data for player {}", agent_id, player_index);
             }
 #endif
         }
@@ -115,10 +113,7 @@ private:
 #ifdef USE_MPI
         uint32_t p32 = static_cast<uint32_t>(player_index);
         if (MPI_Send(&p32, 1, MPI_UNSIGNED, 0, TAG_VERSION_REQ, MPI_COMM_WORLD) != MPI_SUCCESS) {
-            std::stringstream ss;
-            ss << "Error: Agent " << agent_id << " failed to send version request for player "
-               << player_index << " via MPI_Send (tag=" << TAG_VERSION_REQ << ")" << std::endl;
-            std::cerr << ss.str();
+            spdlog::error("Error: Agent {} failed to send version request for player {} via MPI_Send (tag={})", agent_id, player_index, TAG_VERSION_REQ);
         }
 
         // Wait for the learner's answer (blocking)
@@ -128,10 +123,7 @@ private:
         if (latest_version > current_model_versions[player_index]) {
             // Request the weights for that player
             if (MPI_Send(&p32, 1, MPI_UNSIGNED, 0, TAG_WEIGHTS_REQ, MPI_COMM_WORLD) != MPI_SUCCESS) {
-                std::stringstream ss;
-                ss << "Error: Agent " << agent_id << " failed to send weights request for player "
-                << player_index << " via MPI_Send (tag=" << TAG_WEIGHTS_REQ << ")" << std::endl;
-                std::cerr << ss.str();
+                spdlog::error("Error: Agent {} failed to send weights request for player {} via MPI_Send (tag={})", agent_id, player_index, TAG_WEIGHTS_REQ);
             }
 
             // Get the data size
@@ -162,10 +154,8 @@ private:
         uint64_t latest_version = model_manager->getLatestVersion(player_index);
         
         if (latest_version > current_version) {
-            std::stringstream ss;
-            ss << "Agent " << agent_id << " updating model for player " << player_index 
-                      << " from version " << current_version << " to " << latest_version << std::endl;
-            std::cerr << ss.str();
+            spdlog::info("Agent {} updating model for player {} from version {} to {}", 
+                    agent_id, player_index, current_version, latest_version);
             
             // Get the latest model from the manager
             auto shared_model = model_manager->getModel(player_index);
@@ -226,11 +216,7 @@ public:
                 // Create a deep copy for this agent
                 local_models[p] = shared_model->createCopy();
                 current_model_versions[p] = local_models[p]->getVersion();
-                
-                std::stringstream ss;
-                ss << "Agent " << agent_id << " initialized model for player " 
-                        << p << " with version " << current_model_versions[p] << std::endl;
-                std::cerr << ss.str();
+                spdlog::info("Agent {} initialized model for player {} with version {}", agent_id, p, current_model_versions[p]);
             }
         }
     }

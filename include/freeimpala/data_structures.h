@@ -1,6 +1,7 @@
 #ifndef DATA_H
 #define DATA_H
 
+#include <spdlog/spdlog.h>
 #include <iostream>
 #include <vector>
 #include <thread>
@@ -87,7 +88,7 @@ public:
     bool saveToDisk() {
         // Safety check for empty filepath
         if (filepath.empty()) {
-            std::cerr << "Error: Cannot save model with empty filepath" << std::endl;
+            spdlog::error("Error: Cannot save model with empty filepath");
             return false;
         }
         
@@ -98,7 +99,7 @@ public:
 
         std::ofstream file(filepath, std::ios::binary);
         if (!file) {
-            std::cerr << "Error: Could not open file for writing: " << filepath << std::endl;
+            spdlog::info("Error: Could not open file for writing: {}", filepath);
             return false;
         }
 
@@ -371,9 +372,7 @@ public:
                 
                 if (!highest_file.empty()) {
                     filepath = highest_file;
-                    std::stringstream ss;
-                    ss << "Found highest checkpoint for player " << p << ": " << filepath << std::endl;
-                    std::cerr << ss.str();
+                    spdlog::info("Found highest checkpoint for player {}: {}", p, filepath);
                     checkpoint_counters[p] = highest_checkpoint + 1; // Start from next iteration
                 }
             }
@@ -381,9 +380,7 @@ public:
             models[p] = std::make_shared<Model>(models[p]->getData().size(), filepath);
             if (models[p]->loadFromDisk()) {
                 latest_versions[p].store(models[p]->getVersion());
-                std::stringstream ss;
-                ss << "Loaded model " << p << " from disk, version: " << models[p]->getVersion() << std::endl;
-                std::cerr << ss.str();
+                spdlog::info("Loaded model {} from disk, version: {}", p, models[p]->getVersion());
             }
         }
     }
@@ -391,14 +388,14 @@ public:
     // Save a specific model to disk with versioned filename
     void saveModel(size_t player_index, uint64_t current_iteration = 0) {
         if (player_index >= models.size() || !models[player_index]) {
-            std::cerr << "Error: Invalid model index or null model: " << player_index << std::endl;
+            spdlog::error("Error: Invalid model index or null model: {}", player_index);
             return;
         }
         
         // Create a deep copy of the model
         std::shared_ptr<Model> model_copy = models[player_index]->createCopy();
         if (!model_copy) {
-            std::cerr << "Error: Failed to create model copy for player " << player_index << std::endl;
+            spdlog::error("Error: Failed to create model copy for player {}", player_index);
             return;
         }
         
@@ -415,17 +412,14 @@ public:
         
         // Save versioned file
         if (model_copy->saveToDisk()) {
-            std::stringstream ss;
-            ss << "Saved checkpoint for player " << player_index << " at iteration " << timestamp 
-                      << " to " << versioned_filepath << std::endl;
-            std::cerr << ss.str();
+            spdlog::info("Saved checkpoint for player {} at iteration {} to {}", player_index, timestamp, versioned_filepath);
             
             // Also save a copy as "latest"
             auto latest_model = std::make_shared<Model>(model_copy->getData().size(), latest_filepath);
             latest_model->update(model_copy->getData());
             latest_model->saveToDisk();
         } else {
-            std::cerr << "Error: Failed to save checkpoint for player " << player_index << std::endl;
+            spdlog::error("Error: Failed to save checkpoint for player {}", player_index);
         }
     }
     

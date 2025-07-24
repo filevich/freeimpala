@@ -1,5 +1,6 @@
 #pragma once
 
+#include <spdlog/spdlog.h>
 #include <chrono>
 #include <string>
 #include <map>
@@ -264,7 +265,7 @@ public:
     void saveMetricsToCSV(const std::string& filename) const {
         std::ofstream file(filename);
         if (!file) {
-            std::cerr << "Error: Could not open file for writing: " << filename << std::endl;
+            spdlog::error("Error: Could not open file for writing: {}", filename);
             return;
         }
         

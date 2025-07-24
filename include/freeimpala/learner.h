@@ -1,6 +1,7 @@
 #ifndef LEARNER_H
 #define LEARNER_H
 
+#include <spdlog/spdlog.h>
 #include "freeimpala/data_structures.h"
 #include "freeimpala/metrics_tracker.h"
 
@@ -182,9 +183,7 @@ public:
         worker_threads.clear();
         
         // Save final model state if needed
-        std::stringstream ss;
-        ss << "Performing final model save before exit..." << std::endl;
-        std::cerr << ss.str();
+        spdlog::error("Performing final model save before exit");
         uint64_t final_iteration = total_iterations; // Use total iterations as final checkpoint number
         model_manager->saveAllModels(final_iteration);
         

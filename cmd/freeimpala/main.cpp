@@ -114,13 +114,12 @@ bool parseParameters(
     char** argv,
     ProgramParams& params
 ) {
-    std::stringstream ss;
     auto program = setupArgumentParser();
     
     try {
         program.parse_args(argc, argv);
     } catch (const std::runtime_error& err) {
-        std::cerr << err.what() << std::endl;
+        spdlog::error(err.what());
         std::cerr << program;
         return false;
     }
@@ -145,17 +144,13 @@ bool parseParameters(
 
 // Validate parameters
 bool validateParameters(const ProgramParams& params) {
-    std::stringstream ss;
-
     if (params.batch_size > params.buffer_capacity) {
-        ss << "Error: Batch size must be less than buffer capacity" << std::endl;
-        std::cerr << ss.str();
+        spdlog::error("Error: Batch size must be less than buffer capacity");
         return false;
     }
     
     if (params.game_steps > params.entry_size) {
-        ss << "Error: Game steps must be less than or equal to entry size" << std::endl;
-        std::cerr << ss.str();
+        spdlog::error("Error: Game steps must be less than or equal to entry size");
         return false;
     }
     
@@ -164,11 +159,7 @@ bool validateParameters(const ProgramParams& params) {
 
 // Setup and start the learner
 std::unique_ptr<Learner> setupLearner(const ProgramParams& params) {
-    std::stringstream ss;
-    ss << "Creating learner..." << std::endl;
-    std::cerr << ss.str();
-    ss.str("");
-    ss.clear();
+    spdlog::info("Creating learner");
 
     // Correctly calculate learner iterations using floating-point division
     size_t learner_iterations = ceil((params.num_agents * params.total_iterations) / params.batch_size);
@@ -186,10 +177,7 @@ std::unique_ptr<Learner> setupLearner(const ProgramParams& params) {
         learner_iterations
     );
 
-    ss << "Starting learner..." << std::endl;
-    std::cerr << ss.str();
-    ss.str("");
-    ss.clear();
+    spdlog::info("Starting learner");
     
     // Start learner
     learner->start();
@@ -203,11 +191,7 @@ std::vector<std::thread> setupAgents(
     std::vector<std::shared_ptr<Agent>>& agents,
     Learner& learner
 ) {
-    std::stringstream ss;
-    ss << "Creating and starting " << params.num_agents << " agents..." << std::endl;
-    std::cerr << ss.str();
-    ss.str("");
-    ss.clear();
+    spdlog::info("Creating and starting {} agents", params.num_agents);
 
     std::vector<std::thread> agent_threads;
     auto shared_buffers = learner.getSharedBuffers();
@@ -238,20 +222,13 @@ void cleanup(
     Learner& learner, 
     std::vector<std::thread>& agent_threads
 ) {
-    std::stringstream ss;
-    ss << "Waiting for agents to complete..." << std::endl;
-    std::cerr << ss.str();
-    ss.str("");
-    ss.clear();
+    spdlog::info("Waiting for agents to complete");
 
     for (auto& thread : agent_threads) {
         thread.join();
     }
 
-    ss << "Stopping learner..." << std::endl;
-    std::cerr << ss.str();
-    ss.str("");
-    ss.clear();
+    spdlog::info("Stopping learner");
     learner.stop();
 
     auto metrics = MetricsTracker::getInstance();
@@ -262,14 +239,10 @@ void cleanup(
     
     if (!params.metrics_file.empty()) {
         metrics->saveMetricsToCSV(params.metrics_file);
-        ss << "Metrics saved to " << params.metrics_file << std::endl;
-        std::cerr << ss.str();
-        ss.str("");
-        ss.clear();
+        spdlog::info("Metrics saved to {}", params.metrics_file);
     }
 
-    ss << "Execution completed successfully" << std::endl;
-    std::cerr << ss.str();
+    spdlog::info("Execution completed successfully");
 }
 
 int main(int argc, char** argv) {

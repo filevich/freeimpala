@@ -1,4 +1,5 @@
 #include <argparse/argparse.hpp>
+#include <spdlog/spdlog.h>
 #include <chrono>
 #include <iostream>
 #include <memory>
@@ -116,13 +117,12 @@ bool parseParameters(
     char** argv,
     ProgramParams& params
 ) {
-    std::stringstream ss;
     auto program = setupArgumentParser();
     
     try {
         program.parse_args(argc, argv);
     } catch (const std::runtime_error& err) {
-        std::cerr << err.what() << std::endl;
+        spdlog::error(err.what());
         std::cerr << program;
         return false;
     }
@@ -147,17 +147,13 @@ bool parseParameters(
 
 // Validate parameters
 bool validateParameters(const ProgramParams& params) {
-    std::stringstream ss;
-
     if (params.batch_size > params.buffer_capacity) {
-        ss << "Error: Batch size must be less than buffer capacity" << std::endl;
-        std::cerr << ss.str();
+        spdlog::error("Error: Batch size must be less than buffer capacity");
         return false;
     }
     
     if (params.game_steps > params.entry_size) {
-        ss << "Error: Game steps must be less than or equal to entry size" << std::endl;
-        std::cerr << ss.str();
+        spdlog::error("Error: Game steps must be less than or equal to entry size");
         return false;
     }
     
@@ -166,11 +162,7 @@ bool validateParameters(const ProgramParams& params) {
 
 // Setup and start the learner
 std::unique_ptr<Learner> setupLearner(const ProgramParams& params) {
-    std::stringstream ss;
-    ss << "Creating learner..." << std::endl;
-    std::cerr << ss.str();
-    ss.str("");
-    ss.clear();
+    spdlog::info("Creating learner");
 
     // Correctly calculate learner iterations using floating-point division
     size_t learner_iterations = ceil((params.num_agents * params.total_iterations) / params.batch_size);
@@ -188,10 +180,7 @@ std::unique_ptr<Learner> setupLearner(const ProgramParams& params) {
         learner_iterations
     );
 
-    ss << "Starting learner..." << std::endl;
-    std::cerr << ss.str();
-    ss.str("");
-    ss.clear();
+    spdlog::info("Starting learner");
     
     // Start learner
     learner->start();
@@ -224,7 +213,7 @@ void process_tag(
                         MPI_COMM_WORLD
                     );
         if (res != MPI_SUCCESS)
-            std::cerr << "MPI_Send(version_res) failed\n";
+            spdlog::error("MPI_Send(version_res) failed");
         break;
     }
 
@@ -249,7 +238,7 @@ void process_tag(
                     );
 
         if (res != MPI_SUCCESS)
-            std::cerr << "MPI_Send(weights_res) failed\n";
+            spdlog::error("MPI_Send(weights_res) failed");
         break;
     }
 
@@ -263,7 +252,7 @@ void process_tag(
             std::vector<char> traj(buf.begin(), buf.begin() + nbyt);
             buffers[player]->write(std::move(traj));
         } else {
-            std::cerr << "Unexpected tag " << tag << '\n';
+            spdlog::error("Unexpected tag {}", tag);
         }
         break;
     }
@@ -344,7 +333,7 @@ int main(int argc, char** argv) {
     int provided;
     MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
     if (provided < MPI_THREAD_MULTIPLE) {
-        std::cerr << "MPI library does not provide MPI_THREAD_MULTIPLE\n";
+        spdlog::error("MPI library does not provide MPI_THREAD_MULTIPLE");
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
@@ -413,9 +402,7 @@ int main(int argc, char** argv) {
 
         // Tell learner we are done
         if (MPI_Send(nullptr, 0, MPI_CHAR, 0, TAG_TERMINATE, MPI_COMM_WORLD) != MPI_SUCCESS) {
-            std::stringstream ss;
-            ss << "Error: Failed to send TAG_TERMINATE message to learner from rank " << rank << std::endl;
-            std::cerr << ss.str();
+            spdlog::error("Error: Failed to send TAG_TERMINATE message to learner from rank {}", rank);
         }
     }
 
