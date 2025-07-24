@@ -1,5 +1,3 @@
-#include <argparse/argparse.hpp>
-#include <spdlog/spdlog.h>
 #include <chrono>
 #include <iostream>
 #include <memory>
@@ -8,12 +6,14 @@
 #include <vector>
 #include <ctime>
 #include <cmath>
-#include "freeimpala/learner.h"
-#include "freeimpala/agent.h"
 #include <mpi.h>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <argparse/argparse.hpp>
+#include <spdlog/spdlog.h>
+#include "freeimpala/learner.h"
+#include "freeimpala/agent.h"
 #include "freeimpala/utils.h"
 
 // Structure to hold all command-line parameters

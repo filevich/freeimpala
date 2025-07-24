@@ -1,5 +1,3 @@
-#include <argparse/argparse.hpp>
-#include <spdlog/spdlog.h>
 #include <chrono>
 #include <iostream>
 #include <memory>
@@ -8,6 +6,8 @@
 #include <vector>
 #include <ctime>
 #include <cmath>
+#include <argparse/argparse.hpp>
+#include <spdlog/spdlog.h>
 #include "freeimpala/learner.h"
 #include "freeimpala/agent.h"
 #include "freeimpala/utils.h"

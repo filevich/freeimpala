@@ -1,5 +1,3 @@
-#include <argparse/argparse.hpp>
-#include <spdlog/spdlog.h>
 #include <chrono>
 #include <iostream>
 #include <memory>
@@ -12,6 +10,8 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <argparse/argparse.hpp>
+#include <spdlog/spdlog.h>
 #include "freeimpala/learner.h"
 #include "freeimpala/agent.h"
 #include "freeimpala/utils.h"
