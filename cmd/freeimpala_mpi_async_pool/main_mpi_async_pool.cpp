@@ -39,8 +39,7 @@ struct ProgramParams {
 };
 
 // Setup argument parser with all parameters
-argparse::ArgumentParser setupArgumentParser() {
-    argparse::ArgumentParser program("freeimpala");
+void setupArgumentParser(argparse::ArgumentParser& program) {
     program.add_description("Parallel consumer-producer system for game simulation");
 
     // General parameters
@@ -112,8 +111,6 @@ argparse::ArgumentParser setupArgumentParser() {
         .help("Seed for random number generation")
         .default_value(static_cast<unsigned int>(std::time(nullptr)))
         .scan<'u', unsigned int>();
-
-    return program;
 }
 
 // Parse command line arguments and extract parameters
@@ -123,7 +120,8 @@ bool parseParameters(
     ProgramParams& params
 ) {
     std::stringstream ss;
-    auto program = setupArgumentParser();
+    argparse::ArgumentParser program("freeimpala");
+    setupArgumentParser(program);
     
     try {
         program.parse_args(argc, argv);
