@@ -104,3 +104,36 @@ python benchmark.py \
 ```
 
 for `--gpu` use `mps`, `cpu`, `cuda` or `auto`
+
+
+## Libtorch support
+
+### MAC
+
+- Install OpenMP with something like `brew install libomp`
+- Download libtorch somewhere (e.g., `~/Workspace/lib/libtorch`)
+- Add the following to `.vscode/c_cpp_properties.json` in the `configurations.includePath` variable:
+  ```js
+  "${env:HOME}/Workspace/lib/libtorch/include/",
+  "${env:HOME}/Workspace/lib/libtorch/include/torch/csrc/api/include"
+  ```
+- Add the following to `.vscode/settings.json`:
+  ```js
+  "cmake.configureArgs": [
+        "-DCMAKE_PREFIX_PATH=${env:HOME}/Workspace/lib/libtorch"
+  ]
+  ```
+- To compile with CMake `rm -rf build && mkdir -p build && cmake -S . -B build -DCMAKE_PREFIX_PATH=$HOME/Workspace/lib/libtorch && cmake --build build`
+- To compile manually:
+  ```sh
+  g++ -g -O3 -DNDEBUG -std=c++17 -Wall -Wextra \
+    -I./include \
+    -I./vendor \
+    -I$HOME/Workspace/lib/libtorch/include \
+    -I$HOME/Workspace/lib/libtorch/include/torch/csrc/api/include \
+    ./cmd/libtorch_bench/main.cpp \
+    -o libtorch_bench \
+    -L$HOME/Workspace/lib/libtorch/lib \
+    -ltorch_cpu -lc10 -ltorch -lprotobuf -lXNNPACK -ldl -lpthread \
+    -Wl,-rpath,$HOME/Workspace/lib/libtorch/lib
+  ```
