@@ -65,7 +65,14 @@
         "variant": "cpp",
         "chrono": "cpp",
         "source_location": "cpp",
-        "functional": "cpp"
+        "functional": "cpp",
+        "cfenv": "cpp",
+        "cinttypes": "cpp",
+        "regex": "cpp",
+        "shared_mutex": "cpp",
+        "typeindex": "cpp",
+        "unordered_set": "cpp",
+        "valarray": "cpp"
     },
     "cmake.sourceDirectory": "${workspaceFolder}",
     "C_Cpp.default.compilerPath": "/usr/bin/g++",
