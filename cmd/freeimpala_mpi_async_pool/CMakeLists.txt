@@ -3,7 +3,7 @@
 
 # Add source files
 set(SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/main_mpi_async_pool.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
 )
 
 # Optionally include shared source files from src/ if they exist

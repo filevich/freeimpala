@@ -86,7 +86,7 @@ g++ -g -O3 -DNDEBUG -I./include -I./vendor -std=c++17 -Wall -Wextra ./cmd/freeim
 Multi-machine MPI-based freimpala (e.g., `freeimpala_mpi_sync`)
 
 ```sh
-mpicxx -g -O3 -DNDEBUG -DUSE_MPI -I./include -I./vendor -std=c++17 -Wall -Wextra ./cmd/freeimpala_mpi_sync/main_mpi_sync.cpp -o freeimpala_mpi_sync -lstdc++fs -pthread
+mpicxx -g -O3 -DNDEBUG -DUSE_MPI -I./include -I./vendor -std=c++17 -Wall -Wextra ./cmd/freeimpala_mpi_sync/main.cpp -o freeimpala_mpi_sync -lstdc++fs -pthread
 ```
 
 ## GPU bench
