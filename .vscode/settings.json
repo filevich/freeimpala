@@ -69,5 +69,8 @@
     },
     "cmake.sourceDirectory": "${workspaceFolder}",
     "C_Cpp.default.compilerPath": "/usr/bin/g++",
-    "C_Cpp.default.defines": ["USE_MPI"]
+    "C_Cpp.default.defines": ["USE_MPI"],
+    "cmake.configureArgs": [
+        "-DCMAKE_PREFIX_PATH=${env:HOME}/Workspace/lib/libtorch"
+    ]
 }

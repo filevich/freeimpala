@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
 project(freeimpala CXX)
 
 # Set C++ standard
@@ -28,6 +28,15 @@ include_directories(
 # Add subdirectories for executables
 add_subdirectory(cmd/freeimpala)
 
+# Find LibTorch and include libtorch_bench if found
+find_package(Torch QUIET)
+if(Torch_FOUND)
+    message(STATUS "LibTorch found. Including libtorch_bench subdirectory.")
+    add_subdirectory(cmd/libtorch_bench)
+else()
+    message(WARNING "LibTorch not found. Skipping libtorch_bench target. Set CMAKE_PREFIX_PATH to LibTorch location.")
+endif()
+
 # Find MPI and include freeimpala_mpi_* subdirectories if found
 find_package(MPI)
 if (MPI_CXX_FOUND)
@@ -38,5 +47,5 @@ if (MPI_CXX_FOUND)
     message(STATUS "MPI C++ bindings found. Including freeimpala_mpi_async_pool subdirectory.")
     add_subdirectory(cmd/freeimpala_mpi_async_pool)
 else()
-    message(WARNING "MPI C++ bindings not found. Skipping 'freeimpala_mpi_async_pool' target.")
+    message(WARNING "MPI C++ bindings not found. Skipping all MPI targets.")
 endif()

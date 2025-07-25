@@ -9,7 +9,9 @@
                 "${default}",
                 "${workspaceFolder}/include",
                 "${workspaceFolder}/vendor",
-                "/opt/homebrew/Cellar/open-mpi/5.0.7/include"
+                "/opt/homebrew/Cellar/open-mpi/5.0.7/include",
+                "${env:HOME}/Workspace/lib/libtorch/include/",
+                "${env:HOME}/Workspace/lib/libtorch/include/torch/csrc/api/include"
             ]
         }
     ],
