@@ -1,5 +1,4 @@
-#ifndef LEARNER_H
-#define LEARNER_H
+#pragma once
 
 #include <spdlog/spdlog.h>
 #include "freeimpala/data_structures.h"
@@ -207,5 +206,3 @@ public:
         return model_manager;
     }
 };
-
-#endif // LEARNER_H

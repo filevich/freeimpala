@@ -1,5 +1,4 @@
-#ifndef AGENT_H
-#define AGENT_H
+#pragma once
 
 #include <spdlog/spdlog.h>
 #include <future>
@@ -300,5 +299,3 @@ public:
         should_stop.store(true);
     }
 };
-
-#endif // AGENT_H

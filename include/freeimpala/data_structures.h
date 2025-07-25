@@ -1,5 +1,4 @@
-#ifndef DATA_H
-#define DATA_H
+#pragma once
 
 #include <spdlog/spdlog.h>
 #include <iostream>
@@ -480,5 +479,3 @@ public:
         return 0;
     }
 };
-
-#endif // DATA_H
