@@ -6,12 +6,14 @@
 #include <vector>
 #include <ctime>
 #include <cmath>
+#include <random>
 #include <argparse/argparse.hpp>
 #include <spdlog/spdlog.h>
 #include "freeimpala/learner.h"
 #include "freeimpala/agent.h"
 #include "freeimpala/utils.h"
 #include "freeimpala/broker/MQTTBroker.h"
+#include "WeatherData.h"
 
 // Structure to hold all command-line parameters
 struct ProgramParams {
@@ -253,28 +255,57 @@ void cleanup(
 }
 
 int main(int argc, char** argv) {
-    MQTTBroker broker("0.0.0.0", "1883");
+    try {
+        IMessageBroker* broker = createMQTTBroker("0.0.0.0", 1883);
+        const std::string locations[] = {"Miami", "New York", "London", "Tokyo", "Sydney"};
+        std::mt19937 rng(std::random_device{}());
+        std::uniform_int_distribution<int> tempDist(-10, 40);
+        std::uniform_real_distribution<float> windDist(0.0f, 100.0f);
 
-    broker.setMessageHandler(
-        [](const std::string& t, const std::string& m)
-        { std::cout << "RX [" << t << "] " << m << '\n'; });
+        for (int i = 0; i < 100; ++i) {
+            WeatherData data{
+                tempDist(rng),
+                locations[i % 5],
+                windDist(rng)
+            };
 
-    /* 1)  Pump the loop until the broker says we are connected.           */
-    // while (broker.client().error == MQTT_ERROR_NOT_CONNECTED)  // helper below
-    //     broker.loop();
+            std::string payload = serializeWeatherData(data);
+            if (broker->publish("weather", payload)) {
+                std::cout << "Published: " << payload << std::endl;
+            } else {
+                std::cerr << "Publish failed!" << std::endl;
+            }
+            sleep(1);
+        }
 
-    /* 2)  Now the SUBSCRIBE will succeed.                                 */
-    if (!broker.subscribe("demo/topic"))
-        std::cerr << "subscribe() failed - did you call it too early?\n";
+        delete broker;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
 
-    /* 3)  Publish a test message so we will receive something.            */
-    broker.publish("demo/topic", "ping from same client");
+    // MQTTBroker broker("0.0.0.0", "1883");
 
-    std::cout << "entering receive loop ...\n";
-    for (;;)
-        broker.loop();        // will print RX […] once per publish
+    // broker.setMessageHandler(
+    //     [](const std::string& t, const std::string& m)
+    //     { std::cout << "RX [" << t << "] " << m << '\n'; });
+
+    // /* 1)  Pump the loop until the broker says we are connected.           */
+    // // while (broker.client().error == MQTT_ERROR_NOT_CONNECTED)  // helper below
+    // //     broker.loop();
+
+    // /* 2)  Now the SUBSCRIBE will succeed.                                 */
+    // if (!broker.subscribe("demo/topic"))
+    //     std::cerr << "subscribe() failed - did you call it too early?\n";
+
+    // /* 3)  Publish a test message so we will receive something.            */
+    // broker.publish("demo/topic", "ping from same client");
+
+    // std::cout << "entering receive loop ...\n";
+    // for (;;)
+    //     broker.loop();        // will print RX […] once per publish
     
-    std::cout << "exiting!\n";
+    // std::cout << "exiting!\n";
     if (2<3) {
         return 0;
     }
