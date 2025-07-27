@@ -12,8 +12,9 @@
 #include "freeimpala/learner.h"
 #include "freeimpala/agent.h"
 #include "freeimpala/utils.h"
-#include "freeimpala/broker/MQTTBroker.h"
 #include "WeatherData.h"
+// Include the Paho MQTT C++ client library
+#include <MQTTClient.h>
 
 // Structure to hold all command-line parameters
 struct ProgramParams {
@@ -255,55 +256,102 @@ void cleanup(
 }
 
 int main(int argc, char** argv) {
-    try {
-        IMessageBroker* broker = createMQTTBroker("0.0.0.0", 1883);
-        const std::string locations[] = {"Miami", "New York", "London", "Tokyo", "Sydney"};
-        std::mt19937 rng(std::random_device{}());
-        std::uniform_int_distribution<int> tempDist(-10, 40);
-        std::uniform_real_distribution<float> windDist(0.0f, 100.0f);
+    // Define the MQTT broker address and topic
+    const std::string SERVER_ADDRESS = "tcp://localhost:1883";
+    const std::string CLIENT_ID = "freeimpala_learner";
+    const std::string TOPIC = "demo/topic";
+    const int QOS = 1; // Quality of Service (0: at most once, 1: at least once, 2: exactly once)
 
-        for (int i = 0; i < 100; ++i) {
-            WeatherData data{
-                tempDist(rng),
-                locations[i % 5],
-                windDist(rng)
-            };
+    // Declare a Paho MQTT C client handle
+    MQTTClient client;
+    // Declare connection options structure and initialize it with default values
+    MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer;
+    // Declare message structure and initialize it with default values
+    MQTTClient_message pubmsg = MQTTClient_message_initializer;
+    // Declare a delivery token to track message delivery
+    MQTTClient_deliveryToken token;
+    int rc; // Return code for Paho MQTT C functions
 
-            std::string payload = serializeWeatherData(data);
-            if (broker->publish("weather", payload)) {
-                std::cout << "Published: " << payload << std::endl;
-            } else {
-                std::cerr << "Publish failed!" << std::endl;
-            }
-            sleep(1);
-        }
+    // Random number generation setup
+    std::random_device rd; // Obtain a random number from hardware
+    std::mt19937 gen(rd()); // Seed the random number generator
+    std::uniform_int_distribution<> distrib(1, 1000); // Distribution for random message content
 
-        delete broker;
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
-        return 1;
+    // Create the MQTT client instance
+    // Arguments: client handle, server URI (C-string), client ID (C-string), persistence type, persistence context
+    // For this example, we use MQTTCLIENT_PERSISTENCE_NONE as we don't need message persistence
+    rc = MQTTClient_create(&client, SERVER_ADDRESS.c_str(), CLIENT_ID.c_str(),
+                           MQTTCLIENT_PERSISTENCE_NONE, NULL);
+    if (rc != MQTTCLIENT_SUCCESS) {
+        std::cerr << "Failed to create client, return code: " << rc << std::endl;
+        return EXIT_FAILURE;
     }
 
-    // MQTTBroker broker("0.0.0.0", "1883");
+    // Set up connection options
+    // Clean session ensures that no previous session information is used or stored
+    conn_opts.cleansession = 1; // Use 1 for true, 0 for false in C API
 
-    // broker.setMessageHandler(
-    //     [](const std::string& t, const std::string& m)
-    //     { std::cout << "RX [" << t << "] " << m << '\n'; });
+    // Attempt to connect to the MQTT broker
+    std::cout << "Attempting to connect to the MQTT broker at " << SERVER_ADDRESS << "..." << std::endl;
+    // Arguments: client handle, connection options
+    rc = MQTTClient_connect(client, &conn_opts);
+    if (rc != MQTTCLIENT_SUCCESS) {
+        std::cerr << "Failed to connect, return code: " << rc << std::endl;
+        // Provide more detailed error message for common connection failures
+        if (rc == MQTTCLIENT_DISCONNECTED) {
+            std::cerr << "  (Broker not running or incorrect address/port?)" << std::endl;
+        }
+        MQTTClient_destroy(&client); // Clean up client before exiting
+        return EXIT_FAILURE;
+    }
+    std::cout << "Successfully connected to the broker." << std::endl;
 
-    // /* 1)  Pump the loop until the broker says we are connected.           */
-    // // while (broker.client().error == MQTT_ERROR_NOT_CONNECTED)  // helper below
-    // //     broker.loop();
+    // Publish 100 random messages
+    for (int i = 1; i <= 100; ++i) {
+        // Generate a random message content
+        std::string message_content_str = "Random message " + std::to_string(distrib(gen));
+        std::string payload_str = "Message #" + std::to_string(i) + ": " + message_content_str;
 
-    // /* 2)  Now the SUBSCRIBE will succeed.                                 */
-    // if (!broker.subscribe("demo/topic"))
-    //     std::cerr << "subscribe() failed - did you call it too early?\n";
+        // Set the payload for the MQTT message
+        // The C API expects a char* and the length of the payload
+        pubmsg.payload = (void*)payload_str.c_str();
+        pubmsg.payloadlen = payload_str.length();
+        pubmsg.qos = QOS;
+        pubmsg.retained = 0; // 0 for false, 1 for true
 
-    // /* 3)  Publish a test message so we will receive something.            */
-    // broker.publish("demo/topic", "ping from same client");
+        // Publish the message
+        std::cout << "Publishing to topic '" << TOPIC << "': " << payload_str << std::endl;
+        // Arguments: client handle, topic (C-string), message structure, delivery token pointer
+        rc = MQTTClient_publishMessage(client, TOPIC.c_str(), &pubmsg, &token);
+        if (rc != MQTTCLIENT_SUCCESS) {
+            std::cerr << "Failed to publish message, return code: " << rc << std::endl;
+            // Continue trying to send messages, but log the error
+        } else {
+            // Wait for the message to be delivered (optional, but good for QoS > 0)
+            // This blocks until the message is acknowledged by the broker
+            rc = MQTTClient_waitForCompletion(client, token, 1000L); // 1000ms timeout
+            if (rc != MQTTCLIENT_SUCCESS) {
+                std::cerr << "Message delivery failed or timed out, return code: " << rc << std::endl;
+            }
+        }
 
-    // std::cout << "entering receive loop ...\n";
-    // for (;;)
-    //     broker.loop();        // will print RX […] once per publish
+        // Wait for 1 second before sending the next message
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+
+    // Disconnect from the broker
+    std::cout << "\nAll messages sent. Disconnecting from the broker..." << std::endl;
+    // Arguments: client handle, timeout in milliseconds
+    rc = MQTTClient_disconnect(client, 10000); // 10 seconds timeout for graceful disconnect
+    if (rc != MQTTCLIENT_SUCCESS) {
+        std::cerr << "Failed to disconnect, return code: " << rc << std::endl;
+        MQTTClient_destroy(&client);
+        return EXIT_FAILURE;
+    }
+    std::cout << "Disconnected." << std::endl;
+
+    // Destroy the client to free resources
+    MQTTClient_destroy(&client);
     
     // std::cout << "exiting!\n";
     if (2<3) {

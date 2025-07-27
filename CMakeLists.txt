@@ -25,8 +25,6 @@ include_directories(
 # )
 # FetchContent_MakeAvailable(argparse)
 
-add_subdirectory(vendor/mqtt_c)
-
 # Add subdirectories for executables
 add_subdirectory(cmd/freeimpala)
 

@@ -24,7 +24,8 @@ set_target_properties(freeimpala PROPERTIES
 target_link_libraries(freeimpala
     PRIVATE
     # argparse # this line is not needed anymore
-    mqtt_c
+    # Link against the Paho MQTT C library
+    paho-mqtt3c
 )
 
 # Include directories
@@ -32,6 +33,16 @@ target_include_directories(freeimpala
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../vendor
+    # Add the Paho MQTT C library include path
+    # This path is specific to Homebrew on macOS
+    /opt/homebrew/Cellar/libpaho-mqtt/1.3.14/include
+)
+
+# Add the Paho MQTT C library search path for the linker
+# This path is where the actual libpaho-mqtt3a.dylib file is located
+target_link_directories(freeimpala
+    PRIVATE
+    /opt/homebrew/Cellar/libpaho-mqtt/1.3.14/lib
 )
 
 # Install target
