@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
-project(freeimpala CXX)
+project(freeimpala CXX C)  # Add C language support
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -24,6 +24,8 @@ include_directories(
 #     GIT_TAG v2.9
 # )
 # FetchContent_MakeAvailable(argparse)
+
+add_subdirectory(vendor/mqtt_c)
 
 # Add subdirectories for executables
 add_subdirectory(cmd/freeimpala)

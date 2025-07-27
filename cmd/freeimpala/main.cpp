@@ -11,6 +11,7 @@
 #include "freeimpala/learner.h"
 #include "freeimpala/agent.h"
 #include "freeimpala/utils.h"
+#include "freeimpala/broker/MQTTBroker.h"
 
 // Structure to hold all command-line parameters
 struct ProgramParams {
@@ -252,6 +253,32 @@ void cleanup(
 }
 
 int main(int argc, char** argv) {
+    MQTTBroker broker("0.0.0.0", "1883");
+
+    broker.setMessageHandler(
+        [](const std::string& t, const std::string& m)
+        { std::cout << "RX [" << t << "] " << m << '\n'; });
+
+    /* 1)  Pump the loop until the broker says we are connected.           */
+    // while (broker.client().error == MQTT_ERROR_NOT_CONNECTED)  // helper below
+    //     broker.loop();
+
+    /* 2)  Now the SUBSCRIBE will succeed.                                 */
+    if (!broker.subscribe("demo/topic"))
+        std::cerr << "subscribe() failed - did you call it too early?\n";
+
+    /* 3)  Publish a test message so we will receive something.            */
+    broker.publish("demo/topic", "ping from same client");
+
+    std::cout << "entering receive loop ...\n";
+    for (;;)
+        broker.loop();        // will print RX […] once per publish
+    
+    std::cout << "exiting!\n";
+    if (2<3) {
+        return 0;
+    }
+
     ProgramParams params;
 
     // Parse and validate parameters

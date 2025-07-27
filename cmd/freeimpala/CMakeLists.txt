@@ -24,6 +24,7 @@ set_target_properties(freeimpala PROPERTIES
 target_link_libraries(freeimpala
     PRIVATE
     # argparse # this line is not needed anymore
+    mqtt_c
 )
 
 # Include directories
