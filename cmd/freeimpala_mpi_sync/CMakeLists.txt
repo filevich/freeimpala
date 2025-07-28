@@ -1,45 +1,16 @@
-# --- freeimpala_mpi_sync Executable ---
-# Build rules for the freeimpala_mpi_sync executable (requires MPI)
+file(GLOB SHARED_SOURCES ../../src/*.cpp)
 
-# Add source files
-set(SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
-)
+add_executable(freeimpala_mpi_sync main.cpp ${SHARED_SOURCES})
 
-# Optionally include shared source files from src/ if they exist
-file(GLOB SHARED_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../../src/*.cpp)
-if(SHARED_SOURCES)
-    list(APPEND SOURCES ${SHARED_SOURCES})
-endif()
-
-# Create executable
-add_executable(freeimpala_mpi_sync ${SOURCES})
-
-# Set output directory for freeimpala_mpi_sync
-set_target_properties(freeimpala_mpi_sync PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
-)
-
-# Link the MPI library directly
 target_link_libraries(freeimpala_mpi_sync
-    PRIVATE
-    # argparse # this line is not needed anymore
+  PRIVATE
     MPI::MPI_CXX
+    argparse::argparse
+    spdlog::spdlog_header_only
 )
 
-# Include directories (including MPI headers)
-target_include_directories(freeimpala_mpi_sync
-    PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../vendor
-    ${MPI_CXX_INCLUDE_DIRS}
-)
-
-# Add the -DUSE_MPI compile definition ONLY for freeimpala_mpi_sync
 target_compile_definitions(freeimpala_mpi_sync
-    PRIVATE
-    USE_MPI
+  PRIVATE USE_MPI
 )
 
-# Install the MPI executable
 install(TARGETS freeimpala_mpi_sync DESTINATION bin)
