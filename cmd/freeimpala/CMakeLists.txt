@@ -1,3 +1,5 @@
+# `${workspaceFolder}/cmd/freeimpala/CMakeLists.txt`
+
 # freeimpala executable
 file(GLOB SHARED_SOURCES ../../src/*.cpp)
 
@@ -16,5 +18,7 @@ target_link_libraries(freeimpala
 target_include_directories(freeimpala
   PRIVATE
     ${PROJECT_SOURCE_DIR}/../../include
+    ${PAHO_MQTT_C_INCLUDE_DIR}
 )
+
 install(TARGETS freeimpala DESTINATION bin)

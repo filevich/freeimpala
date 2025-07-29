@@ -1,3 +1,5 @@
+# `${workspaceFolder}/cmd/freeimpala_mpi_async/CMakeLists.txt`
+
 file(GLOB SHARED_SOURCES ../../src/*.cpp)
 
 add_executable(freeimpala_mpi_async main.cpp ${SHARED_SOURCES})

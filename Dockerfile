@@ -1,80 +1,82 @@
-# Use continuumio/miniconda3 as the base image
+# syntax=docker/dockerfile:1
 FROM continuumio/miniconda3:latest
 
-# Define build argument for MPI implementation and version (default: openmpi:5.0.5)
-# Alternatively, `MPI=mpich`
+# — build args —
 ARG MPI=openmpi:5.0.5
+ARG LIBTORCH_VERSION=2.7.1
+ARG LIBTORCH_DIR=/opt/libtorch
 
-# Parse the MPI argument to extract implementation and version
+# — install MPI, cmake, compilers —
 RUN MPI_IMPL=$(echo $MPI | cut -d: -f1) && \
     MPI_VERSION=$(echo $MPI | cut -d: -f2) && \
     if [ -z "$MPI_IMPL" ] || [ -z "$MPI_VERSION" ]; then \
-        echo "Error: MPI argument must be in the form 'impl:version'" && exit 1; \
+      echo "MPI arg must be impl:version" && exit 1; \
     fi && \
-    if [ "$MPI_IMPL" != "openmpi" ] && [ "$MPI_IMPL" != "mpich" ]; then \
-        echo "Error: Invalid MPI implementation. Use 'openmpi' or 'mpich'." && exit 1; \
-    fi && \
-    # Install the specified MPI implementation, CMake, make, and compilers via conda
     if [ "$MPI_IMPL" = "openmpi" ]; then \
-        conda install -c conda-forge \
-            openmpi=${MPI_VERSION} \
-            cmake \
-            make \
-            compilers ; \
+      conda install -c conda-forge openmpi=${MPI_VERSION} cmake make compilers; \
     elif [ "$MPI_IMPL" = "mpich" ]; then \
-        conda install -c conda-forge \
-            mpich=${MPI_VERSION} \
-            cmake \
-            make \
-            compilers ; \
+      conda install -c conda-forge mpich=${MPI_VERSION} cmake make compilers; \
+    else \
+      echo "Unsupported MPI: $MPI_IMPL" && exit 1; \
     fi && \
     conda clean -afy
 
-# Install additional system dependencies
+# — system deps —
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        libssl-dev \
-        wget && \
+      libssl-dev wget unzip libpaho-mqtt-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Set working directory and copy application code
+# — fetch libtorch for the right arch —
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "aarch64" ]; then \
+      URL="https://download.pytorch.org/libtorch/cpu/libtorch-macos-arm64-${LIBTORCH_VERSION}.zip"; \
+    else \
+      URL="https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-${LIBTORCH_VERSION}%2Bcpu.zip"; \
+    fi && \
+    echo "Downloading LibTorch from $URL ..." && \
+    wget -qO /tmp/libtorch.zip "$URL" && \
+    mkdir -p ${LIBTORCH_DIR} && \
+    unzip -q /tmp/libtorch.zip -d /tmp && \
+    mv /tmp/libtorch/* ${LIBTORCH_DIR} && \
+    rm -rf /tmp/libtorch* /tmp/libtorch.zip
+
+# — copy your code in —
 WORKDIR /app
 COPY . /app
 
-# Ensure Conda's bin and lib directories are in PATH and LD_LIBRARY_PATH
 ENV PATH="/opt/conda/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/opt/conda/lib:${LD_LIBRARY_PATH}"
 
-# Generate a script to set MPI-specific environment variables
+# — generate MPI‐env script —
 RUN MPI_IMPL=$(echo $MPI | cut -d: -f1) && \
     if [ "$MPI_IMPL" = "openmpi" ]; then \
-        echo "export OMPI_ALLOW_RUN_AS_ROOT=1" > /set_mpi_env.sh && \
-        echo "export OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1" >> /set_mpi_env.sh; \
+      printf "export OMPI_ALLOW_RUN_AS_ROOT=1\nexport OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1\n" > /set_mpi_env.sh; \
     else \
-        touch /set_mpi_env.sh; \
+      touch /set_mpi_env.sh; \
     fi
 
-# Activate Conda environment and compile the application
+# — build everything with MPI compilers and libtorch —
 RUN . /opt/conda/etc/profile.d/conda.sh && \
     conda activate base && \
-    mkdir -p build && \
-    cd build && \
-    cmake -DCMAKE_CXX_COMPILER=mpicxx \
-          -DCMAKE_C_COMPILER=mpicc \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_VERBOSE_MAKEFILE=ON .. && \
-    cmake --build .
+    mkdir -p build && cd build && \
+    cmake \
+      -DCMAKE_C_COMPILER=mpicc \
+      -DCMAKE_CXX_COMPILER=mpicxx \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_VERBOSE_MAKEFILE=ON \
+      -DCMAKE_PREFIX_PATH=${LIBTORCH_DIR} \
+      .. && \
+    cmake --build . --parallel
 
-# Move compiled binaries to /usr/local/bin and clean up
-RUN mkdir -p /usr/local/bin/ && \
+# — install binaries & cleanup —
+RUN mkdir -p /usr/local/bin && \
     mv /app/build/* /usr/local/bin/ && \
-    rm -rf /app
+    rm -rf /app /opt/conda/pkgs
 
-# Verify MPI version (build-time check)
+# — sanity checks —
 RUN mpirun --version
+RUN ls -l /usr/local/bin || true
 
-# Verify binaries exist (build-time check)
-RUN ls -l /usr/local/bin/ || true
-
-# Set entrypoint to source the environment script and start an interactive shell
-CMD ["/bin/bash", "-c", ". /set_mpi_env.sh && /bin/bash"]
+# — entrypoint —
+CMD ["/bin/bash", "-c", ". /set_mpi_env.sh && exec /bin/bash"]

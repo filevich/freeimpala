@@ -1,3 +1,5 @@
+# `${workspaceFolder}/cmd/libtorch_bench/CMakeLists.txt`
+
 file(GLOB SHARED_SOURCES ../../src/*.cpp)
 
 add_executable(libtorch_bench main.cpp ${SHARED_SOURCES})

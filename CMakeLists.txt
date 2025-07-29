@@ -1,3 +1,4 @@
+# root `${workspaceFolder}/CMakeLists.txt` file
 cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
 project(freeimpala LANGUAGES C CXX)
 
@@ -39,21 +40,36 @@ else()
   message(WARNING "LibTorch not found; libtorch_bench will be skipped")
 endif()
 
-# — Find Paho MQTT C (pkg‑config style) —
+# — Find Paho MQTT C —
 find_path(PAHO_MQTT_C_INCLUDE_DIR
   NAMES MQTTClient.h
-  HINTS $ENV{CMAKE_PREFIX_PATH}/include /usr/local/include /usr/include
+  HINTS
+    /usr/include
+    /usr/local/include
+    /opt/homebrew/include
 )
+
 find_library(PAHO_MQTT3C_LIBRARY
   NAMES paho-mqtt3c
-  HINTS $ENV{CMAKE_PREFIX_PATH}/lib /usr/local/lib /usr/lib
+  HINTS
+    /usr/lib
+    /usr/lib/x86_64-linux-gnu
+    /usr/local/lib
+    /opt/homebrew/lib
 )
+
 if(NOT PAHO_MQTT_C_INCLUDE_DIR OR NOT PAHO_MQTT3C_LIBRARY)
-  message(FATAL_ERROR "Paho MQTT C not found. Install paho-mqtt-c via brew/apt/spack.")
+  message(FATAL_ERROR "Cannot find Paho MQTT C; install via brew/apt/spack")
 endif()
-add_library(PahoMqttC::paho-mqtt3c UNKNOWN IMPORTED)
+
+# diagnostic output
+message(STATUS "Paho MQTT C include dir: ${PAHO_MQTT_C_INCLUDE_DIR}")
+message(STATUS "Paho MQTT C library  : ${PAHO_MQTT3C_LIBRARY}")
+
+# imported shared library target
+add_library(PahoMqttC::paho-mqtt3c SHARED IMPORTED)
 set_target_properties(PahoMqttC::paho-mqtt3c PROPERTIES
-  IMPORTED_LOCATION           ${PAHO_MQTT3C_LIBRARY}
+  IMPORTED_LOCATION             ${PAHO_MQTT3C_LIBRARY}
   INTERFACE_INCLUDE_DIRECTORIES ${PAHO_MQTT_C_INCLUDE_DIR}
 )
 
