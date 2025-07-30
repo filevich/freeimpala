@@ -6,6 +6,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options(-Wall -Wextra -pthread)
 
+# — Fix for conda compiler include paths —
+# Add system include directory for conda-based compilers
+add_compile_options(-I/usr/include)
+
 # — Fetch header-only libs —
 include(FetchContent)
 FetchContent_Declare(
@@ -49,11 +53,22 @@ find_path(PAHO_MQTT_C_INCLUDE_DIR
     /opt/homebrew/include
 )
 
+# Detect system architecture for library search
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+  set(ARCH_LIB_DIR "aarch64-linux-gnu")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64")
+  set(ARCH_LIB_DIR "x86_64-linux-gnu")
+else()
+  set(ARCH_LIB_DIR "")
+endif()
+
 find_library(PAHO_MQTT3C_LIBRARY
   NAMES paho-mqtt3c
   HINTS
     /usr/lib
+    /usr/lib/${ARCH_LIB_DIR}  # Architecture-specific directory
     /usr/lib/x86_64-linux-gnu
+    /usr/lib/aarch64-linux-gnu
     /usr/local/lib
     /opt/homebrew/lib
 )
@@ -63,8 +78,10 @@ if(NOT PAHO_MQTT_C_INCLUDE_DIR OR NOT PAHO_MQTT3C_LIBRARY)
 endif()
 
 # diagnostic output
+message(STATUS "System processor: ${CMAKE_SYSTEM_PROCESSOR}")
+message(STATUS "Architecture lib dir: ${ARCH_LIB_DIR}")
 message(STATUS "Paho MQTT C include dir: ${PAHO_MQTT_C_INCLUDE_DIR}")
-message(STATUS "Paho MQTT C library  : ${PAHO_MQTT3C_LIBRARY}")
+message(STATUS "Paho MQTT C library: ${PAHO_MQTT3C_LIBRARY}")
 
 # imported shared library target
 add_library(PahoMqttC::paho-mqtt3c SHARED IMPORTED)
