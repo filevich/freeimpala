@@ -13,8 +13,7 @@
 #include "freeimpala/agent.h"
 #include "freeimpala/utils.h"
 #include "WeatherData.h"
-#include "freeimpala/broker/MqttBroker.h"
-
+#include "signals/mqtt_broker.h"
 
 // Structure to hold all command-line parameters
 struct ProgramParams {
@@ -277,7 +276,7 @@ int main(int argc, char** argv) {
 
     try {
         // Create MQTT broker instance
-        MqttBroker broker(params.broker, "freeimpala_learner");
+        signals::MqttBroker broker(params.broker, "freeimpala_learner");
         
         // Connect to broker
         if (!broker.connect()) {
@@ -313,7 +312,7 @@ int main(int argc, char** argv) {
     }
 
     try {
-        MqttBroker broker(params.broker, "subscriber_client");
+        signals::MqttBroker broker(params.broker, "subscriber_client");
         
         // Set up message handler - this will be called automatically
         // whenever messages arrive on subscribed topics
