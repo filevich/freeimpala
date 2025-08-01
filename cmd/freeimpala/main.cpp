@@ -33,11 +33,16 @@ struct ProgramParams {
     std::string metrics_file;
     unsigned int seed;
     std::string log_level;
+    std::string broker;
 };
 
 // Setup argument parser with all parameters
 void setupArgumentParser(argparse::ArgumentParser& program) {
     program.add_description("Parallel consumer-producer system for game simulation");
+
+    program.add_argument("--broker")
+        .help("MQTT Broker")
+        .default_value(std::string("localhost"));
 
     // General parameters
     program.add_argument("-p", "--players")
@@ -148,6 +153,7 @@ bool parseParameters(
     params.metrics_file = program.get<std::string>("--metrics-file");
     params.seed = program.get<unsigned int>("--seed");
     params.log_level = program.get<std::string>("--log-level");
+    params.broker = program.get<std::string>("--broker");
 
     return true;
 }
@@ -256,8 +262,21 @@ void cleanup(
 }
 
 int main(int argc, char** argv) {
+    ProgramParams params;
+
+    // Parse and validate parameters
+    if (!parseParameters(argc, argv, params)) {
+        return 1;
+    }
+    
+    if (!validateParameters(params)) {
+        return 1;
+    }
+
+    std::cout << "Using params.broker=" << params.broker << std::endl;
+
     // Define the MQTT broker address and topic
-    const std::string SERVER_ADDRESS = "tcp://localhost:1883";
+    const std::string SERVER_ADDRESS = "tcp://" + params.broker + ":1883";
     const std::string CLIENT_ID = "freeimpala_learner";
     const std::string TOPIC = "demo/topic";
     const int QOS = 1; // Quality of Service (0: at most once, 1: at least once, 2: exactly once)
@@ -307,10 +326,10 @@ int main(int argc, char** argv) {
     std::cout << "Successfully connected to the broker." << std::endl;
 
     // Publish 100 random messages
-    for (int i = 1; i <= 100; ++i) {
+    for (int i = 1; i <= 10; ++i) {
         // Generate a random message content
         std::string message_content_str = "Random message " + std::to_string(distrib(gen));
-        std::string payload_str = "Message #" + std::to_string(i) + ": " + message_content_str;
+        std::string payload_str = "Message num. " + std::to_string(i) + ": " + message_content_str;
 
         // Set the payload for the MQTT message
         // The C API expects a char* and the length of the payload
@@ -356,17 +375,6 @@ int main(int argc, char** argv) {
     // std::cout << "exiting!\n";
     if (2<3) {
         return 0;
-    }
-
-    ProgramParams params;
-
-    // Parse and validate parameters
-    if (!parseParameters(argc, argv, params)) {
-        return 1;
-    }
-    
-    if (!validateParameters(params)) {
-        return 1;
     }
 
     Utils::init_logs(params.log_level);
