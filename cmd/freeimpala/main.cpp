@@ -315,7 +315,8 @@ int main(int argc, char** argv) {
     try {
         MqttBroker broker(params.broker, "subscriber_client");
         
-        // Set up message handler for incoming messages
+        // Set up message handler - this will be called automatically
+        // whenever messages arrive on subscribed topics
         broker.setMessageHandler([](const std::string& topic, const std::string& message) {
             std::cout << "Received message on topic '" << topic << "': " << message << std::endl;
         });
@@ -331,16 +332,13 @@ int main(int argc, char** argv) {
             return EXIT_FAILURE;
         }
         
-        std::cout << "Listening for messages (blocking mode)... Press Ctrl+C to exit" << std::endl;
+        std::cout << "Listening for messages... Messages will arrive automatically via callbacks!" << std::endl;
+        std::cout << "No explicit loop needed - just keep the main thread alive." << std::endl;
+        std::cout << "Press Enter to exit..." << std::endl;
         
-        // Optional blocking message processing loop.
-        // In Paho C client, loop is handled internally by callbacks; So we 
-        // don't really need to do this
-        // while (broker.isConnected()) {
-        //     broker.loop(true, 60'000); // Block for up to 60 seconds waiting for messages
-        //     // This will only print every 60 seconds OR when a message arrives
-        //     std::cout << "Loop iteration completed" << std::endl;
-        // }
+        // Just keep the main thread alive - that's all we need!
+        // The MQTT library handles everything else in background threads
+        std::cin.get();
         
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

@@ -105,6 +105,7 @@ public:
     void disconnect() {
         if (connected) {
             std::cout << "Disconnecting from MQTT broker..." << std::endl;
+            
             int rc = MQTTClient_disconnect(client, 10000); // 10 seconds timeout
             if (rc != MQTTCLIENT_SUCCESS) {
                 std::cerr << "Failed to disconnect, return code: " << rc << std::endl;
@@ -170,23 +171,21 @@ public:
         messageHandler = handler;
     }
     
-    // Process messages
-    void loop(bool blocking = false, int timeoutMs = 1000) override {
+    // Process messages - for MQTT with callbacks, this is mostly a no-op
+    // since message processing happens automatically in background threads
+    void loop(bool blocking = false, int timeoutMs = 1000) {
         if (!connected) {
             return;
         }
         
         if (blocking) {
-            // Blocking mode: wait for messages with timeout
-            // The MQTT library handles message callbacks in background threads,
-            // so we just need to block and let them work
+            // For MQTT with callbacks, we just need to keep the thread alive
+            // Messages are processed automatically by the callback system
             std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
         } else {
-            // Non-blocking mode: process pending messages and return immediately
-            MQTTClient_yield();
-            
-            // Small sleep to prevent busy waiting
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // Non-blocking: just yield briefly to let system process
+            // any pending work, then return immediately
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
     
