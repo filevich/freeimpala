@@ -260,23 +260,10 @@ void cleanup(
     spdlog::info("Execution completed successfully");
 }
 
-int main(int argc, char** argv) {
-    ProgramParams params;
-
-    // Parse and validate parameters
-    if (!parseParameters(argc, argv, params)) {
-        return 1;
-    }
-    
-    if (!validateParameters(params)) {
-        return 1;
-    }
-
-    spdlog::info("Using params.broker={}", params.broker);
-
+int publishRandomMessages(std::string broker_addr) {
     try {
         // Create MQTT broker instance
-        signals::MqttBroker broker(params.broker, "freeimpala_learner");
+        signals::MqttBroker broker(broker_addr, "freeimpala_learner");
         
         // Connect to broker
         if (!broker.connect()) {
@@ -310,9 +297,11 @@ int main(int argc, char** argv) {
         spdlog::error("Error: {}", e.what());
         return EXIT_FAILURE;
     }
+}
 
+int subscribeExample(std::string broker_addr) {
     try {
-        signals::MqttBroker broker(params.broker, "subscriber_client");
+        signals::MqttBroker broker(broker_addr, "subscriber_client");
         
         // Set up message handler - this will be called automatically
         // whenever messages arrive on subscribed topics
@@ -342,9 +331,27 @@ int main(int argc, char** argv) {
     } catch (const std::exception& e) {
         spdlog::error("Error: {}", e.what());
     }
+}
+
+int main(int argc, char** argv) {
+    ProgramParams params;
+
+    // Parse and validate parameters
+    if (!parseParameters(argc, argv, params)) {
+        return 1;
+    }
     
-    std::cout << "exiting!\n";
+    if (!validateParameters(params)) {
+        return 1;
+    }
+
+    spdlog::info("Using params.broker={}", params.broker);
+
+    publishRandomMessages(params.broker);
+    subscribeExample(params.broker);
+    
     if (2<3) {
+        std::cout << "Exiting\n";
         return 0;
     }
 
