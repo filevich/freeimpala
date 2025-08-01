@@ -291,8 +291,8 @@ int main(int argc, char** argv) {
         
         // Publish 10 random messages
         for (int i = 1; i <= 10; ++i) {
-            std::string message_content = "Rand. message " + std::to_string(distrib(gen));
-            std::string payload = "Message # " + std::to_string(i) + ": " + message_content;
+            std::string message_content = "Random message " + std::to_string(distrib(gen));
+            std::string payload = "Message #" + std::to_string(i) + ": " + message_content;
             
             std::cout << "Publishing to topic 'demo/topic': " << payload << std::endl;
             
@@ -333,12 +333,14 @@ int main(int argc, char** argv) {
         
         std::cout << "Listening for messages (blocking mode)... Press Ctrl+C to exit" << std::endl;
         
-        // Blocking message processing loop - much more efficient!
-        while (broker.isConnected()) {
-            broker.loop(true, 60'000); // Block for up to 60 seconds waiting for messages
-            // This will only print every 5 seconds OR when a message arrives
-            std::cout << "Loop iteration completed" << std::endl;
-        }
+        // Optional blocking message processing loop.
+        // In Paho C client, loop is handled internally by callbacks; So we 
+        // don't really need to do this
+        // while (broker.isConnected()) {
+        //     broker.loop(true, 60'000); // Block for up to 60 seconds waiting for messages
+        //     // This will only print every 60 seconds OR when a message arrives
+        //     std::cout << "Loop iteration completed" << std::endl;
+        // }
         
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
