@@ -273,7 +273,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::cout << "Using params.broker=" << params.broker << std::endl;
+    spdlog::info("Using params.broker={}", params.broker);
 
     try {
         // Create MQTT broker instance
@@ -294,21 +294,21 @@ int main(int argc, char** argv) {
             std::string message_content = "Random message " + std::to_string(distrib(gen));
             std::string payload = "Message #" + std::to_string(i) + ": " + message_content;
             
-            std::cout << "Publishing to topic 'demo/topic': " << payload << std::endl;
+            spdlog::info("Publishing to topic 'demo/topic': {}", payload);
             
             if (!broker.publish("demo/topic", payload)) {
-                std::cerr << "Failed to publish message " << i << std::endl;
+                spdlog::error("Failed to publish message {}", i);
                 // Continue with next message
             }
             
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
         
-        std::cout << "\nAll messages sent." << std::endl;
+        spdlog::info("All messages sent");
         // Destructor automatically handles disconnection and cleanup
         
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        spdlog::error("Error: {}", e.what());
         return EXIT_FAILURE;
     }
 
@@ -318,17 +318,17 @@ int main(int argc, char** argv) {
         // Set up message handler - this will be called automatically
         // whenever messages arrive on subscribed topics
         broker.setMessageHandler([](const std::string& topic, const std::string& message) {
-            std::cout << "Received message on topic '" << topic << "': " << message << std::endl;
+            spdlog::info("Received message on topic '{}': {}", topic, message);
         });
         
         if (!broker.connect()) {
-            std::cerr << "Failed to connect" << std::endl;
+            spdlog::error("Failed to connect");
             return EXIT_FAILURE;
         }
         
         // Subscribe to topic
         if (!broker.subscribe("demo/topic")) {
-            std::cerr << "Failed to subscribe" << std::endl;
+            spdlog::error("Failed to subscribe");
             return EXIT_FAILURE;
         }
         
@@ -341,7 +341,7 @@ int main(int argc, char** argv) {
         std::cin.get();
         
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        spdlog::error("Error: {}", e.what());
     }
     
     std::cout << "exiting!\n";

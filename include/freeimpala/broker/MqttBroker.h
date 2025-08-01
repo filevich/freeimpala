@@ -48,11 +48,7 @@ private:
     // Handle connection lost
     void handleConnectionLost(char* cause) {
         connected = false;
-        std::cerr << "Connection lost";
-        if (cause) {
-            std::cerr << ": " << cause;
-        }
-        std::cerr << std::endl;
+        spdlog::error("Connection lost {}", cause);
     }
 
 public:
@@ -85,32 +81,32 @@ public:
         MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer;
         conn_opts.cleansession = 1;
         
-        std::cout << "Attempting to connect to MQTT broker at " << serverAddress << "..." << std::endl;
+        spdlog::info("Attempting to connect to MQTT broker at {}", serverAddress);
         
         int rc = MQTTClient_connect(client, &conn_opts);
         if (rc != MQTTCLIENT_SUCCESS) {
-            std::cerr << "Failed to connect to MQTT broker, return code: " << rc << std::endl;
+            spdlog::error("Failed to connect to MQTT broker, return code: {}", rc);
             if (rc == MQTTCLIENT_DISCONNECTED) {
-                std::cerr << "  (Broker not running or incorrect address/port?)" << std::endl;
+                spdlog::error("Broker not running or incorrect address/port");
             }
             return false;
         }
         
         connected = true;
-        std::cout << "Successfully connected to MQTT broker." << std::endl;
+        spdlog::info("Successfully connected to MQTT broker");
         return true;
     }
     
     // Disconnect from the broker
     void disconnect() {
         if (connected) {
-            std::cout << "Disconnecting from MQTT broker..." << std::endl;
+            spdlog::info("Disconnecting from MQTT broker");
             
             int rc = MQTTClient_disconnect(client, 10000); // 10 seconds timeout
             if (rc != MQTTCLIENT_SUCCESS) {
-                std::cerr << "Failed to disconnect, return code: " << rc << std::endl;
+                spdlog::error("Failed to disconnect, return code: {}", rc);
             } else {
-                std::cout << "Disconnected from MQTT broker." << std::endl;
+                spdlog::info("Disconnected from MQTT broker");
             }
             connected = false;
         }
@@ -132,7 +128,7 @@ public:
         
         int rc = MQTTClient_publishMessage(client, topic.c_str(), &pubmsg, &token);
         if (rc != MQTTCLIENT_SUCCESS) {
-            std::cerr << "Failed to publish message to topic '" << topic << "', return code: " << rc << std::endl;
+            spdlog::error("Failed to publish message to topic '{}', return code: {}", topic, rc);
             return false;
         }
         
@@ -140,7 +136,7 @@ public:
         if (qos > 0) {
             rc = MQTTClient_waitForCompletion(client, token, 1000L);
             if (rc != MQTTCLIENT_SUCCESS) {
-                std::cerr << "Message delivery failed or timed out for topic '" << topic << "', return code: " << rc << std::endl;
+                spdlog::error("Message delivery failed or timed out for topic '{}', return code: {}", topic, rc);
                 return false;
             }
         }
@@ -154,15 +150,15 @@ public:
             return false;
         }
         
-        std::cout << "Subscribing to topic: " << topic << std::endl;
+        spdlog::info("Subscribing to topic: {}", topic);
         
         int rc = MQTTClient_subscribe(client, topic.c_str(), qos);
         if (rc != MQTTCLIENT_SUCCESS) {
-            std::cerr << "Failed to subscribe to topic '" << topic << "', return code: " << rc << std::endl;
+            spdlog::error("Failed to subscribe to topic '{}', return code: {}", topic, rc);
             return false;
         }
         
-        std::cout << "Successfully subscribed to topic: " << topic << std::endl;
+        spdlog::info("Successfully subscribed to topic: {}", topic);
         return true;
     }
     
