@@ -12,9 +12,7 @@
 #include "freeimpala/learner.h"
 #include "freeimpala/agent.h"
 #include "freeimpala/utils.h"
-#include "signals/weather_data.h"
 #include "signals/mqtt_broker.h"
-#include "signals/simple_serializer.h"
 
 // Structure to hold all command-line parameters
 struct ProgramParams {
@@ -261,94 +259,6 @@ void cleanup(
     spdlog::info("Execution completed successfully");
 }
 
-int publishRandomMessages(std::string broker_addr, std::string topic = "demo/topic") {
-    try {
-        // Create MQTT broker instance
-        signals::MqttBroker broker(broker_addr, "freeimpala_learner");
-        
-        // Connect to broker
-        if (!broker.connect()) {
-            return EXIT_FAILURE;
-        }
-        
-        // Random number generators
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<> temp_dist(-20, 40);
-        std::uniform_real_distribution<> wind_dist(0.0, 50.0);
-        
-        std::vector<std::string> locations = {"Miami", "New York", "London", "Tokyo", "Sydney"};
-        std::uniform_int_distribution<> loc_dist(0, locations.size() - 1);
-        
-        // Publish 10 random messages
-        for (int i = 1; i <= 10; ++i) {
-            // Generate random weather data
-            WeatherData weather(
-                temp_dist(gen),
-                locations[loc_dist(gen)],
-                static_cast<float>(wind_dist(gen))
-            );
-
-            // Serialize the data
-            std::vector<std::pair<std::string, std::string>> fields = {
-                {"temperature", std::to_string(weather.temperature)},
-                {"location", weather.location},
-                {"wind", std::to_string(weather.wind)}
-            };
-            std::string payload = SimpleSerializer::serialize(fields);
-
-            spdlog::info("Publishing to topic '{}': {}", topic, payload);
-            if (!broker.publish(topic, payload)) {
-                spdlog::error("Failed to publish message {}", i);
-                // Continue with next message
-            }
-            
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-        
-        spdlog::info("All messages sent");
-        // Destructor automatically handles disconnection and cleanup
-        
-    } catch (const std::exception& e) {
-        spdlog::error("Error: {}", e.what());
-        return EXIT_FAILURE;
-    }
-}
-
-int subscribeExample(std::string broker_addr) {
-    try {
-        signals::MqttBroker broker(broker_addr, "subscriber_client");
-        
-        // Set up message handler - this will be called automatically
-        // whenever messages arrive on subscribed topics
-        broker.setMessageHandler([](const std::string& topic, const std::string& message) {
-            spdlog::info("Received message on topic '{}': {}", topic, message);
-        });
-        
-        if (!broker.connect()) {
-            spdlog::error("Failed to connect");
-            return EXIT_FAILURE;
-        }
-        
-        // Subscribe to topic
-        if (!broker.subscribe("demo/topic")) {
-            spdlog::error("Failed to subscribe");
-            return EXIT_FAILURE;
-        }
-        
-        std::cout << "Listening for messages... Messages will arrive automatically via callbacks!" << std::endl;
-        std::cout << "No explicit loop needed - just keep the main thread alive." << std::endl;
-        std::cout << "Press Enter to exit..." << std::endl;
-        
-        // Just keep the main thread alive - that's all we need!
-        // The MQTT library handles everything else in background threads
-        std::cin.get();
-        
-    } catch (const std::exception& e) {
-        spdlog::error("Error: {}", e.what());
-    }
-}
-
 int main(int argc, char** argv) {
     ProgramParams params;
 
@@ -363,13 +273,8 @@ int main(int argc, char** argv) {
 
     spdlog::info("Using params.broker={}", params.broker);
 
-    publishRandomMessages(params.broker);
-    subscribeExample(params.broker);
-    
-    if (2<3) {
-        std::cout << "Exiting...\n";
-        return 0;
-    }
+    // Connect to broker
+    // signals::MqttBroker broker(broker_addr, "freeimpala_client");
 
     Utils::init_logs(params.log_level);
     std::srand(params.seed);

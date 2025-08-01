@@ -92,6 +92,7 @@ set_target_properties(PahoMqttC::paho-mqtt3c PROPERTIES
 
 # — Add your binaries —
 add_subdirectory(cmd/freeimpala)
+add_subdirectory(cmd/mqtt_example)
 
 if(MPI_CXX_FOUND)
   add_subdirectory(cmd/freeimpala_mpi_sync)
