@@ -12,8 +12,9 @@
 #include "freeimpala/learner.h"
 #include "freeimpala/agent.h"
 #include "freeimpala/utils.h"
-#include "WeatherData.h"
+#include "signals/weather_data.h"
 #include "signals/mqtt_broker.h"
+#include "signals/simple_serializer.h"
 
 // Structure to hold all command-line parameters
 struct ProgramParams {
@@ -260,7 +261,7 @@ void cleanup(
     spdlog::info("Execution completed successfully");
 }
 
-int publishRandomMessages(std::string broker_addr) {
+int publishRandomMessages(std::string broker_addr, std::string topic = "demo/topic") {
     try {
         // Create MQTT broker instance
         signals::MqttBroker broker(broker_addr, "freeimpala_learner");
@@ -270,19 +271,34 @@ int publishRandomMessages(std::string broker_addr) {
             return EXIT_FAILURE;
         }
         
-        // Random number generation setup
+        // Random number generators
         std::random_device rd;
         std::mt19937 gen(rd());
-        std::uniform_int_distribution<> distrib(1, 1000);
+        std::uniform_int_distribution<> temp_dist(-20, 40);
+        std::uniform_real_distribution<> wind_dist(0.0, 50.0);
+        
+        std::vector<std::string> locations = {"Miami", "New York", "London", "Tokyo", "Sydney"};
+        std::uniform_int_distribution<> loc_dist(0, locations.size() - 1);
         
         // Publish 10 random messages
         for (int i = 1; i <= 10; ++i) {
-            std::string message_content = "Random message " + std::to_string(distrib(gen));
-            std::string payload = "Message #" + std::to_string(i) + ": " + message_content;
-            
-            spdlog::info("Publishing to topic 'demo/topic': {}", payload);
-            
-            if (!broker.publish("demo/topic", payload)) {
+            // Generate random weather data
+            WeatherData weather(
+                temp_dist(gen),
+                locations[loc_dist(gen)],
+                static_cast<float>(wind_dist(gen))
+            );
+
+            // Serialize the data
+            std::vector<std::pair<std::string, std::string>> fields = {
+                {"temperature", std::to_string(weather.temperature)},
+                {"location", weather.location},
+                {"wind", std::to_string(weather.wind)}
+            };
+            std::string payload = SimpleSerializer::serialize(fields);
+
+            spdlog::info("Publishing to topic '{}': {}", topic, payload);
+            if (!broker.publish(topic, payload)) {
                 spdlog::error("Failed to publish message {}", i);
                 // Continue with next message
             }
@@ -351,7 +367,7 @@ int main(int argc, char** argv) {
     subscribeExample(params.broker);
     
     if (2<3) {
-        std::cout << "Exiting\n";
+        std::cout << "Exiting...\n";
         return 0;
     }
 

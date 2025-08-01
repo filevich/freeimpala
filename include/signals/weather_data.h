@@ -7,6 +7,10 @@ struct WeatherData {
     int temperature;
     std::string location;
     float wind;
+    
+    WeatherData() : temperature(0), wind(0.0f) {}
+    WeatherData(int temp, const std::string& loc, float w) 
+        : temperature(temp), location(loc), wind(w) {}
 };
 
 // Simple serialization format: [temperature]|[location]|[wind]
