@@ -1,6 +1,7 @@
 # root `${workspaceFolder}/CMakeLists.txt` file
 cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
 project(freeimpala LANGUAGES C CXX)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -130,7 +130,7 @@ int publishRandomMessages(std::string broker_addr, std::string topic = "demo/top
                 {"location", weather.location},
                 {"wind", std::to_string(weather.wind)}
             };
-            std::string payload = SimpleSerializer::serialize(fields);
+            std::string payload = signals::SimpleSerializer::serialize(fields);
 
             spdlog::info("Publishing to topic '{}' (using SimpleSerializer): {}", topic, payload);
             if (!broker.publish(topic, payload)) {
